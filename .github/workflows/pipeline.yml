@@ -1,0 +1,113 @@
+# Scheduled execution (§8). GitHub Actions holds the scheduler role that the
+# dagster-daemon would otherwise hold, so no always-on machine is needed.
+#
+# The runner is destroyed after the job, so Dagster's own run history does not
+# survive whatever DAGSTER_HOME is set to. That is designed for, not
+# discovered: the durable evidence of a scheduled run is the static HTML
+# published to Pages below (§8). Persisting history instead would mean a
+# hosted database, which this project deliberately does not have.
+
+name: pipeline
+
+on:
+  schedule:
+    # 02:00 SGT == 18:00 UTC the previous day. Must match schedules.py.
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+      GCP_LOCATION: US
+      GCP_RAW_BUCKET: ${{ secrets.GCP_RAW_BUCKET }}
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      DBT_PROFILES_DIR: ./transform
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa.json
+      # Set so the run reads orchestration/dagster.yaml (telemetry off) and
+      # writes SQLite history the later steps can read within the job. It dies
+      # with the runner — see the header.
+      DAGSTER_HOME: ${{ github.workspace }}/orchestration
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      # Written to disk for dbt and dlt, then removed in the final step. Never
+      # committed, never echoed (§10).
+      - name: Write service-account key
+        run: echo '${{ secrets.GCP_SA_KEY }}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+
+      - name: Install dbt packages
+        run: uv run dbt deps --project-dir transform
+
+      - name: Materialise the asset graph
+        run: uv run python orchestration/run_all.py
+
+      # --- Publish the static reports (§8) ------------------------------------
+      # `if: always()` throughout — these artifacts matter most when the run
+      # failed (§8, §12).
+
+      - name: Generate dbt docs
+        if: always()
+        run: uv run dbt docs generate --project-dir transform --target ci
+
+      - name: Collect reports
+        if: always()
+        run: |
+          mkdir -p site/dbt site/quality
+          cp -r transform/target/* site/dbt/ 2>/dev/null || true
+          cp -r quality/great_expectations/uncommitted/data_docs/local_site/* \
+                site/quality/ 2>/dev/null || true
+
+      - name: Upload reports as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-reports
+          path: site/
+          retention-days: 30
+
+      - name: Upload to Pages
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Remove service-account key
+        if: always()
+        run: rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+
+  publish:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

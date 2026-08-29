@@ -1,0 +1,46 @@
+# Two services — webserver and daemon — over a bind-mounted DAGSTER_HOME.
+#
+# There is no database service. Dagster's default storage is SQLite under
+# DAGSTER_HOME (§8, orchestration/dagster.yaml), so mounting the host's
+# DAGSTER_HOME is what makes this console show real history: the same runs
+# `dagster dev` wrote on this machine.
+#
+# The corollary, stated plainly rather than discovered: history is per-machine.
+# A GitHub Actions runner writes nowhere this mount can see, so scheduled-run
+# history is not here. That is the documented limitation of not hosting the
+# orchestrator, not a gap this file was meant to close.
+#
+# Build context is the repo root so the Dockerfile can copy
+# orchestration/dagster.yaml.
+#
+#     docker compose --env-file ../.env up
+#
+# DAGSTER_HOME defaults to ../orchestration, the same directory .env.example
+# tells you to point the host at.
+
+name: olist-dagster
+
+services:
+  webserver:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: dagster-webserver -h 0.0.0.0 -p 3000
+    ports:
+      - "3000:3000"
+    environment:
+      DAGSTER_HOME: /opt/dagster/dagster_home
+    volumes:
+      - ${DAGSTER_HOME:-../orchestration}:/opt/dagster/dagster_home
+    restart: unless-stopped
+
+  daemon:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: dagster-daemon run
+    environment:
+      DAGSTER_HOME: /opt/dagster/dagster_home
+    volumes:
+      - ${DAGSTER_HOME:-../orchestration}:/opt/dagster/dagster_home
+    restart: unless-stopped

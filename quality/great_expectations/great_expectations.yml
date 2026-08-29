@@ -1,0 +1,41 @@
+# GX context configuration. Datasource points at the marts dataset only —
+# quality checks assert what the marts claim to produce (§7).
+#
+# TODO(B1): generate this with `great_expectations init` rather than by hand,
+# then reconcile against the paths below. The `uncommitted/` tree is gitignored;
+# `data_docs/` is regenerated on every run and published to Pages (§8).
+
+config_version: 4
+fluent_datasources:
+  olist_marts:
+    type: sql
+    connection_string: bigquery://${GCP_PROJECT}/olist_marts
+
+stores:
+  expectations_store:
+    class_name: ExpectationsStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: expectations/
+
+  validation_results_store:
+    class_name: ValidationResultsStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: uncommitted/validations/
+
+  checkpoint_store:
+    class_name: CheckpointStore
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: checkpoints/
+
+data_docs_sites:
+  local_site:
+    class_name: SiteBuilder
+    show_how_to_buttons: false
+    store_backend:
+      class_name: TupleFilesystemStoreBackend
+      base_directory: uncommitted/data_docs/local_site/
+    site_index_builder:
+      class_name: DefaultSiteIndexBuilder

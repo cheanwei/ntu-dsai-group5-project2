@@ -1,0 +1,81 @@
+[project]
+name = "olist-data-platform"
+version = "0.1.0"
+description = "End-to-end data platform over the Olist Brazilian E-Commerce dataset"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+
+# Lower bounds here, exact versions in uv.lock. The reproducibility argument in
+# docs/architecture-design.md §8 — a pinned dependency set standing in for a
+# container — rests on the lockfile, which is committed. Pinning exact versions
+# in both places only creates conflicts to hand-resolve.
+#
+# Upgrade deliberately: `uv lock --upgrade`, then re-run the pipeline.
+dependencies = [
+    # Ingestion (§4)
+    "dlt[bigquery,filesystem,gs]>=1.30",
+    "kagglehub>=1.0",
+    "google-cloud-storage>=2.19",
+    # Transformation (§5)
+    # Upper bound is dagster-dbt's, not ours: dagster-dbt 0.29.x requires
+    # dbt-core>=1.7,<1.12. Raising dbt means raising dagster-dbt first.
+    "dbt-core>=1.11,<1.12",
+    "dbt-bigquery>=1.11,<1.12",
+    # Quality (§7). The bigquery extra supplies the SQLAlchemy datasource the
+    # marts suites read through.
+    "great-expectations[bigquery]>=1.21",
+    # Orchestration (§8)
+    "dagster>=1.13",
+    "dagster-webserver>=1.13",
+    "dagster-dbt>=0.29",
+    "dagster-dlt>=0.29",
+    # Analysis (§9)
+    "sqlalchemy>=2.0",
+    "sqlalchemy-bigquery>=1.17",
+    # Capped below 3.0 on purpose: pandas 3.0 is a breaking major release and
+    # the notebooks, GX and dbt paths here are not validated against it. Lift
+    # the cap as a deliberate piece of work, not as a side effect of a sync.
+    "pandas>=2.2,<3",
+    # Direct import in ingestion/config.py. Present transitively via dbt, but a
+    # module that imports it must declare it — a transitive dep is not a
+    # contract.
+    "pyyaml>=6",
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+    "jupyterlab>=4.3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# DuckDB fallback target, kept so dbt models still build if GCP credentials
+# fail near the deadline (§12).
+duckdb = ["dbt-duckdb>=1.9,<1.12"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "nbstripout>=0.8",
+    "pytest>=8.3",
+    # Only for `bootstrap_env.py --oauth`, which mints a Kaggle token from the
+    # terminal. Deliberately dev-only: the pipeline authenticates with
+    # KAGGLE_API_TOKEN and never needs the CLI, so it stays out of the CI
+    # install footprint (§3).
+    "kaggle>=1.7",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["transform/target", "transform/dbt_packages", "notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `package = false` above means nothing is installed into site-packages, so the
+# repo root has to be on sys.path for `import ingestion` to resolve.
+pythonpath = ["."]

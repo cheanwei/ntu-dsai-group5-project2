@@ -1,0 +1,40 @@
+name: olist
+version: "1.0.0"
+config-version: 2
+
+profile: olist
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# Layering per architecture-design.md §5.1. Staging and intermediate are views
+# (cheap, always fresh); marts are tables (the only layer analysts query).
+models:
+  olist:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+
+seeds:
+  olist:
+    +schema: seeds
+
+vars:
+  # The dataset ends part-way through October 2018. Trend charts must exclude
+  # or annotate the incomplete tail — presenting it as a revenue collapse is
+  # the most likely way to lose credibility in Q&A (§9, §12).
+  dataset_start_date: "2016-09-01"
+  dataset_end_date: "2018-12-31"
+  last_complete_month: "2018-08-01"
+  # order_status values that count as revenue — decided once, in intermediate (§6).
+  revenue_order_statuses: ["delivered", "shipped", "invoiced", "processing"]

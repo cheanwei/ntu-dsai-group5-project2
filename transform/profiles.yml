@@ -1,0 +1,46 @@
+# Location is US multi-region everywhere and is immutable after creation (§14).
+# Each engineer builds into their own dataset so concurrent work never collides
+# in the shared olist_marts (§10): `dbt run --target dev_<name>`.
+olist:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT') }}"
+      dataset: "{{ env_var('DBT_DEV_DATASET', 'dbt_dev') }}"
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+      location: US
+      threads: 4
+      timeout_seconds: 600
+      priority: interactive
+
+    prod:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT') }}"
+      dataset: olist
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+      location: US
+      threads: 8
+      timeout_seconds: 600
+      priority: interactive
+
+    # CI runs on a service account supplied through GitHub Actions secrets;
+    # the key is written to disk by the workflow, never committed (§8, §10).
+    ci:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT') }}"
+      dataset: olist_ci
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+      location: US
+      threads: 8
+      timeout_seconds: 600
+
+    # Fallback for the §12 risk "GCP billing or credentials fail near the
+    # deadline": models still build and the analysis still runs locally.
+    duckdb:
+      type: duckdb
+      path: ../olist.duckdb
+      threads: 4

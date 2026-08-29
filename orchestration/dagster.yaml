@@ -1,0 +1,21 @@
+# Dagster instance config (§8). Only takes effect when DAGSTER_HOME points at
+# this directory; without it Dagster uses a temp directory cleared on process
+# exit and run history is lost.
+#
+# There is deliberately no `storage:` block. Omitting it selects Dagster's
+# default local storage: SQLite databases under `$DAGSTER_HOME/history/` and
+# compute logs under `$DAGSTER_HOME/storage/`, both gitignored. That is free,
+# needs no database to provision or keep awake, and is enough for the two
+# places history is actually read — `dagster dev` on a laptop and the console
+# in deploy/.
+#
+# What it is not: shared. A GitHub Actions runner is destroyed after the job,
+# so scheduled-run history stays ephemeral by design. The durable evidence of
+# a scheduled run is the static HTML published to Pages (§8), not this
+# instance.
+#
+# `sqlite` here is instance metadata only — run history, event logs, schedule
+# ticks. The warehouse is BigQuery (§3); nothing analytical touches this file.
+
+telemetry:
+  enabled: false

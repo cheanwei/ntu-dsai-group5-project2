@@ -1,0 +1,72 @@
+# Ingestion configuration (architecture-design.md §4).
+#
+# One entry per source table, carrying everything true about it: the CSV it
+# comes from, the BigQuery table it lands in, and the columns whose types must
+# be declared rather than inferred.
+#
+# `table` values are the `identifier:` fields in
+# transform/models/staging/_sources.yml. dbt is written against them, so a
+# change here without a matching change there breaks the warehouse.
+#
+# Precedence: BIGQUERY_RAW_DATASET, where set, overrides `pipeline.dataset`.
+# Nothing else here is overridable, and no credentials belong in this file.
+
+kaggle:
+  # Pinned so a rebuild loads identical bytes and a bump is a reviewable diff.
+  # Version 2 is current: last updated 2021-10-01, 126 MB.
+  dataset: olistbr/brazilian-ecommerce/versions/2
+
+pipeline:
+  name: olist_ingest
+  dataset: olist_raw
+  # US multi-region, matching the raw bucket. Immutable after creation (§14).
+  location: US
+
+# An unexpected column or a type change fails the load rather than silently
+# reshaping the warehouse (§4).
+schema_contract:
+  tables: evolve
+  columns: freeze
+  data_type: freeze
+
+# text_columns: leading zeros that an integer parse would silently destroy.
+# timestamp_columns: typed explicitly so a load carrying none of them still
+# produces the column rather than dropping it.
+tables:
+  - file: olist_customers_dataset.csv
+    table: olist_customers_dataset
+    text_columns: [customer_zip_code_prefix]
+
+  - file: olist_orders_dataset.csv
+    table: olist_orders_dataset
+    timestamp_columns:
+      - order_purchase_timestamp
+      - order_approved_at
+      - order_delivered_carrier_date
+      - order_delivered_customer_date
+      - order_estimated_delivery_date
+
+  - file: olist_order_items_dataset.csv
+    table: olist_order_items_dataset
+    timestamp_columns: [shipping_limit_date]
+
+  - file: olist_order_payments_dataset.csv
+    table: olist_order_payments_dataset
+
+  - file: olist_order_reviews_dataset.csv
+    table: olist_order_reviews_dataset
+    timestamp_columns: [review_creation_date, review_answer_timestamp]
+
+  - file: olist_products_dataset.csv
+    table: olist_products_dataset
+
+  - file: olist_sellers_dataset.csv
+    table: olist_sellers_dataset
+    text_columns: [seller_zip_code_prefix]
+
+  - file: olist_geolocation_dataset.csv
+    table: olist_geolocation_dataset
+    text_columns: [geolocation_zip_code_prefix]
+
+  - file: product_category_name_translation.csv
+    table: product_category_name_translation

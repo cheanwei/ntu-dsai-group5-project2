@@ -1,0 +1,158 @@
+version: 2
+
+# The only layer analysts are expected to query, and the only layer a
+# non-engineer sees in the BigQuery console (§15). Descriptions here carry the
+# most weight of anywhere in the project — lane C1.
+
+models:
+  - name: dim_date
+    description: TODO(C1)
+    columns:
+      - name: date_key
+        description: TODO(C1)
+        data_tests: [unique, not_null]
+
+  - name: dim_customer
+    description: >
+      TODO(C1). Keyed on customer_unique_id, not customer_id — see §5.2.
+    columns:
+      - name: customer_key
+        description: TODO(C1)
+        data_tests: [unique, not_null]
+    data_tests:
+      # The §12 guard: if this dimension ever reaches order-count rows, it has
+      # been keyed on the per-order surrogate and the customer analysis is
+      # meaningless.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >
+              (select count(*) from {{ ref('dim_customer') }})
+              < (select count(*) from {{ ref('fct_orders') }})
+
+  - name: dim_product
+    description: TODO(C1)
+    columns:
+      - name: product_key
+        description: TODO(C1)
+        data_tests: [unique, not_null]
+      - name: product_category_name_english
+        description: >
+          TODO(C1). Never null: ~610 uncategorised products map to an explicit
+          'unknown' member (§6).
+        data_tests: [not_null]
+
+  - name: dim_seller
+    description: TODO(C1)
+    columns:
+      - name: seller_key
+        description: TODO(C1)
+        data_tests: [unique, not_null]
+
+  - name: fct_order_items
+    description: TODO(C1)
+    columns:
+      - name: order_id
+        description: TODO(C1)
+        data_tests: [not_null]
+      - name: customer_key
+        description: TODO(C1)
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+      - name: product_key
+        description: TODO(C1)
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_product')
+                field: product_key
+      - name: seller_key
+        description: TODO(C1)
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_seller')
+                field: seller_key
+      - name: price
+        description: TODO(C1)
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+      - name: freight_value
+        description: TODO(C1)
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= 0"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [order_id, order_item_id]
+
+  - name: fct_orders
+    description: TODO(C1)
+    columns:
+      - name: order_id
+        description: TODO(C1)
+        data_tests: [unique, not_null]
+      - name: customer_key
+        description: TODO(C1)
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customer')
+                field: customer_key
+      - name: order_status
+        description: TODO(C1)
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [delivered, shipped, canceled, unavailable, invoiced,
+                         processing, created, approved]
+
+  - name: fct_payments
+    description: TODO(C1)
+    columns:
+      - name: order_id
+        description: TODO(C1)
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_id
+      - name: payment_type
+        description: TODO(C1)
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [credit_card, boleto, voucher, debit_card, not_defined]
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [order_id, payment_sequential]
+
+  - name: fct_reviews
+    description: TODO(C1)
+    columns:
+      - name: review_id
+        description: TODO(C1)
+        data_tests: [unique, not_null]
+      - name: order_id
+        description: TODO(C1)
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_id
+      - name: review_score
+        description: TODO(C1)
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "between 1 and 5"

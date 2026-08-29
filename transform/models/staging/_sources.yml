@@ -1,0 +1,76 @@
+version: 2
+
+sources:
+  - name: olist_raw
+    description: >
+      Raw landing tables loaded by dlt from the GCS raw zone. Faithful to
+      source: type enforcement only, no cleaning (§6). Every row carries
+      `_dlt_load_id`, so "which run produced this row" is answerable in SQL.
+    database: "{{ env_var('GCP_PROJECT') }}"
+    schema: olist_raw
+    # The source is a static dump ending October 2018, so freshness will not
+    # advance. The check guards against a partial or stale *load*, not against
+    # stale source data (§8).
+    config:
+      loaded_at_field: _dlt_load_id
+      freshness:
+        warn_after: {count: 36, period: hour}
+        error_after: {count: 72, period: hour}
+
+    tables:
+      - name: customers
+        identifier: olist_customers_dataset
+        description: One row per order-level customer surrogate. TODO(C1)
+        columns:
+          - name: customer_id
+            description: >
+              Per-order surrogate, NOT a stable customer key. Keying a
+              dimension on it yields ~99k customers who each ordered once
+              (§5.2).
+            data_tests: [unique, not_null]
+          - name: customer_unique_id
+            description: The stable customer key. `dim_customer` is keyed on this.
+            data_tests: [not_null]
+          - name: customer_zip_code_prefix
+            description: Leading-zero-bearing prefix. Must be STRING (§4).
+
+      - name: orders
+        identifier: olist_orders_dataset
+        description: One row per order. TODO(C1)
+        columns:
+          - name: order_id
+            data_tests: [unique, not_null]
+
+      - name: order_items
+        identifier: olist_order_items_dataset
+        description: One row per order line. The atomic sales grain. TODO(C1)
+
+      - name: order_payments
+        identifier: olist_order_payments_dataset
+        description: One row per payment instrument per order. TODO(C1)
+
+      - name: order_reviews
+        identifier: olist_order_reviews_dataset
+        description: >
+          One row per review. `review_id` repeats in source and is deduplicated
+          in staging, keeping the latest `review_answer_timestamp` (§6).
+
+      - name: products
+        identifier: olist_products_dataset
+        description: >
+          One row per product. Ships misspelled columns
+          (`product_name_lenght`); renamed in staging, nowhere else.
+
+      - name: sellers
+        identifier: olist_sellers_dataset
+        description: One row per seller. TODO(C1)
+
+      - name: geolocation
+        identifier: olist_geolocation_dataset
+        description: >
+          ~1M rows across ~19k zip prefixes. Reduced to one median lat/lng per
+          prefix in `int_geolocation_deduped` (§5.2).
+
+      - name: product_category_translation
+        identifier: product_category_name_translation
+        description: Portuguese to English category names. Also available as a seed.

@@ -1,0 +1,73 @@
+# --- Credentials (see docs/architecture-design.md §10) ---------------------
+# Broad by design: the service-account key is JSON, and a key committed to
+# history is laborious to expunge. Config JSON that must be tracked is
+# re-admitted explicitly with a negation if that ever becomes necessary.
+*.json
+.env
+.env.*
+!.env.example
+*.pem
+*-key.json
+service-account*.json
+gcp-*.json
+
+# --- Kaggle ---------------------------------------------------------------
+kaggle.json
+.kaggle/
+
+# --- dbt ------------------------------------------------------------------
+transform/target/
+transform/dbt_packages/
+transform/logs/
+.user.yml
+
+# --- Great Expectations ---------------------------------------------------
+quality/great_expectations/uncommitted/
+
+# --- dlt ------------------------------------------------------------------
+.dlt/secrets.toml
+~/.dlt/
+_storage/
+
+# --- Dagster --------------------------------------------------------------
+# DAGSTER_HOME is orchestration/ (§8); its local SQLite instance writes
+# history/ and storage/ there, plus these on first launch.
+dagster_home/
+tmp*/
+.dagster/
+history/
+storage/
+schedules/
+.telemetry/
+.nux/
+.logs_queue/
+
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Notebooks ------------------------------------------------------------
+.ipynb_checkpoints/
+
+# --- Data (never commit the 120 MB dataset; the raw zone is GCS, §4) ------
+data/
+*.csv
+!transform/seeds/*.csv
+*.parquet
+*.zip
+
+# --- Working notes --------------------------------------------------------
+# Design specs written while building. The committed design record is
+# docs/architecture-design.md; these are the scratch that led to it.
+docs/superpowers/
+
+# --- OS / editor ----------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
