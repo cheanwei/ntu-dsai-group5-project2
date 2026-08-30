@@ -630,7 +630,7 @@ olist-data-platform/
 ├── ingestion/                                                               # A1
 │   ├── kaggle_to_gcs.py               # kagglehub → unzip → GCS  (§4)
 │   ├── olist_source.py                # dlt source, explicit column hints
-│   └── pipeline.py                    # dlt pipeline → olist_raw
+│   └── gcs_to_bigquery.py             # dlt pipeline → olist_raw
 ├── transform/                         # dbt project                          # A2
 │   ├── dbt_project.yml
 │   ├── profiles.yml                   # location: US, dev_<name> targets

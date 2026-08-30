@@ -47,7 +47,7 @@ def build_pipeline(cfg: IngestionConfig | None = None):
     )
 
 
-def run(bucket_url: str, pipeline=None, cfg: IngestionConfig | None = None):
+def run_pipeline(bucket_url: str, pipeline=None, cfg: IngestionConfig | None = None):
     """Load every source table from ``bucket_url`` into ``olist_raw``.
 
     Returns dlt's ``LoadInfo``. Failures are not caught: a schema-contract

@@ -2,8 +2,8 @@
 
 Downloads the Olist dataset at a pinned version — kagglehub unzips into its own
 cache and returns that directory — and uploads the nine CSVs to
-``gs://<bucket>/<ingest_date>/``. Returns that URI, which ``pipeline.py``
-consumes as its dlt ``bucket_url``.
+``gs://<bucket>/<ingest_date>/``. Returns that URI, which
+``gcs_to_bigquery.py`` consumes as its dlt ``bucket_url``.
 
 The dataset slug, its pinned version, and the nine filenames all live in
 ``config.yml``.
@@ -46,7 +46,7 @@ def download_dataset(dest_dir: str, download=None, cfg: IngestionConfig | None =
     # there is no archive left for this function to open.
     cache = Path(download(cfg.kaggle_dataset))
 
-    missing = [name for name in cfg.files if not (cache / name).is_file()]
+    missing = [name for name in cfg.csv_filenames if not (cache / name).is_file()]
     if missing:
         raise FileNotFoundError(
             f"{cfg.kaggle_dataset} did not provide: {', '.join(missing)}. "
@@ -56,7 +56,7 @@ def download_dataset(dest_dir: str, download=None, cfg: IngestionConfig | None =
 
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
-    for name in cfg.files:
+    for name in cfg.csv_filenames:
         shutil.copyfile(cache / name, dest / name)
 
     return str(dest)
@@ -87,7 +87,7 @@ def upload_to_gcs(
 
     source = Path(local_dir)
     gcs_bucket = client.bucket(bucket)
-    for name in cfg.files:
+    for name in cfg.csv_filenames:
         blob = gcs_bucket.blob(f"{ingest_date}/{name}")
         blob.upload_from_filename(str(source / name), content_type="text/csv")
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import dlt
 
 from ingestion.config import config
-from ingestion.pipeline import build_pipeline, run
+from ingestion.gcs_to_bigquery import build_pipeline, run_pipeline
 
 
 def test_targets_the_raw_dataset_in_the_us():
@@ -38,7 +38,7 @@ def test_run_loads_every_table_from_the_bucket(bucket_url, tmp_path):
         pipelines_dir=str(tmp_path / "dlt"),
     )
 
-    info = run(bucket_url, pipeline=local)
+    info = run_pipeline(bucket_url, pipeline=local)
 
     loaded = {job.job_file_info.table_name for package in info.load_packages
               for job in package.jobs["completed_jobs"]}
@@ -54,9 +54,9 @@ def test_write_disposition_is_replace_so_reruns_do_not_duplicate(bucket_url, tmp
             pipelines_dir=str(tmp_path / "dlt"),
         )
 
-    run(bucket_url, pipeline=local())
+    run_pipeline(bucket_url, pipeline=local())
     pipeline = local()
-    run(bucket_url, pipeline=pipeline)
+    run_pipeline(bucket_url, pipeline=pipeline)
 
     table = pipeline.default_schema.get_table("olist_customers_dataset")
     assert table["write_disposition"] == "replace"

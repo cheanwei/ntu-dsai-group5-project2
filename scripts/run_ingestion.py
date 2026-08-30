@@ -16,9 +16,9 @@ is the thing `@dlt_assets` and `@dbt_assets` were chosen to avoid.
 So the composition lives here, where only a human calls it. `ingestion/` keeps
 the pieces, each the size of one asset:
 
-    ingestion.kaggle_to_gcs.download_dataset   -> kaggle_dataset
-    ingestion.kaggle_to_gcs.upload_to_gcs      -> gcs_raw_files
-    ingestion.pipeline.run / olist_source      -> the nine dlt assets
+    ingestion.kaggle_to_gcs.download_dataset      -> kaggle_dataset
+    ingestion.kaggle_to_gcs.upload_to_gcs         -> gcs_raw_files
+    ingestion.gcs_to_bigquery.run_pipeline        -> the nine dlt assets
 
 Nothing in `orchestration/` imports this module, and nothing should.
 
@@ -42,8 +42,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ingestion.config import IngestionConfig, config  # noqa: E402
+from ingestion.gcs_to_bigquery import run_pipeline  # noqa: E402
 from ingestion.kaggle_to_gcs import download_dataset, upload_to_gcs  # noqa: E402
-from ingestion.pipeline import run  # noqa: E402
 
 BUCKET_ENV = "GCP_RAW_BUCKET"
 
@@ -124,7 +124,7 @@ def ingest(
     if bucket_url is None:
         bucket_url = stage(bucket, ingest_date, download=download, client=client, cfg=cfg)
 
-    return run(bucket_url, pipeline=pipeline, cfg=cfg)
+    return run_pipeline(bucket_url, pipeline=pipeline, cfg=cfg)
 
 
 def build_parser() -> argparse.ArgumentParser:

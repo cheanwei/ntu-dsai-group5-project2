@@ -31,7 +31,7 @@ Prerequisites: Python 3.11+, [uv](https://docs.astral.sh/uv/), a GCP project
 with BigQuery enabled, and a Kaggle API token.
 
 ```bash
-git clone <repo> && cd olist-data-platform
+git clone <repo> && cd <repo>
 uv sync                          # add --extra duckdb for the §12 fallback target
 cp .env.example .env             # then fill it in
 uv run nbstripout --install      # EVERY person, EVERY clone — see below
@@ -63,8 +63,8 @@ Grant it on the bucket, not the project, so the account stays scoped to the raw
 zone:
 
 ```bash
-gcloud storage buckets add-iam-policy-binding "gs://olist-raw-${GCP_PROJECT}" \\
-  --member="serviceAccount:<sa>@${GCP_PROJECT}.iam.gserviceaccount.com" \\
+gcloud storage buckets add-iam-policy-binding "gs://olist-raw-${GCP_PROJECT}" \
+  --member="serviceAccount:<sa>@${GCP_PROJECT}.iam.gserviceaccount.com" \
   --role=roles/storage.objectUser
 ```
 
@@ -136,11 +136,17 @@ Confirm it in one line:
 uv run python -c "import ssl; print(ssl.get_default_verify_paths().cafile)"   # None → this is it
 ```
 
-Fix the interpreter once, and every venv built from it inherits the fix:
+Fix the interpreter once. Existing venvs inherit it too — they resolve SSL
+paths through the framework they were built from, so there is nothing to
+rebuild:
 
 ```bash
-/Applications/Python\\ 3.11/Install\\ Certificates.command
+"/Applications/Python 3.11/Install Certificates.command"
 ```
+
+Quoted, not backslash-escaped: the path has two spaces in it and a stray
+escape sends the shell looking for `/Applications/Python`. Re-run the check
+above to confirm — it should now print a path ending `etc/openssl/cert.pem`.
 
 Then resume without re-downloading — the raw zone is already populated:
 

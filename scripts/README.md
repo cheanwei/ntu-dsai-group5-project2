@@ -140,6 +140,6 @@ imports the pieces from `ingestion/` directly and never imports this file:
 |---|---|
 | `kaggle_dataset` | `ingestion.kaggle_to_gcs.download_dataset` |
 | `gcs_raw_files` | `ingestion.kaggle_to_gcs.upload_to_gcs` |
-| the nine dlt assets | `ingestion.pipeline.run` over `ingestion.olist_source` |
+| the nine dlt assets | `ingestion.gcs_to_bigquery.run_pipeline` over `ingestion.olist_source` |
 
 What loads, and how, is `ingestion/config.yml` — not this script.

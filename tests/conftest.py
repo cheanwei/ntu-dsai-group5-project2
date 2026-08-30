@@ -12,8 +12,9 @@ from pathlib import Path
 
 import pytest
 
-# The leading zero here is the entire point of ZIP_PREFIX_COLUMNS (§4): read as
-# an integer it becomes 1234 and the prefix is silently wrong.
+# The leading zero here is the entire point of the `text_columns` hints in
+# ingestion/config.yml (§4): read as an integer it becomes 1234 and the prefix
+# is silently wrong.
 ZIP_WITH_LEADING_ZERO = "01234"
 
 FIXTURES: dict[str, str] = {

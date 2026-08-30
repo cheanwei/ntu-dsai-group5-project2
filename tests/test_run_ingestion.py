@@ -69,7 +69,7 @@ def test_stage_downloads_the_pinned_version_and_uploads_under_the_date(fake_kagg
     uri = stage("olist-raw-test", "2026-08-29", download=fake_kaggle, client=client)
 
     assert fake_kaggle.calls == [config().kaggle_dataset]
-    assert client.uploads == [f"2026-08-29/{f}" for f in config().files]
+    assert client.uploads == [f"2026-08-29/{f}" for f in config().csv_filenames]
     assert uri == "gs://olist-raw-test/2026-08-29"
 
 

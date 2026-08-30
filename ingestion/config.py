@@ -12,6 +12,7 @@ Owner: lane A1.
 from __future__ import annotations
 
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -20,10 +21,11 @@ import yaml
 
 CONFIG_PATH = Path(__file__).parent / "config.yml"
 
-# Environment variables that override a config value, and the field they set.
-# The environment wins so CI and a per-developer sandbox can retarget the load
-# without editing a committed file (§10).
-ENV_OVERRIDES = {"dataset": "BIGQUERY_RAW_DATASET"}
+# Overrides `pipeline.dataset` where set. The environment wins so CI and a
+# per-developer sandbox can retarget the load without editing a committed file
+# (§10). It is the only overridable value; `scripts/run_ingestion.py` names the
+# raw bucket the same way, in `BUCKET_ENV`.
+DATASET_ENV = "BIGQUERY_RAW_DATASET"
 
 _TOP_LEVEL_KEYS = {"kaggle", "pipeline", "schema_contract", "tables"}
 _TABLE_KEYS = {"file", "table", "text_columns", "timestamp_columns"}
@@ -68,39 +70,57 @@ class IngestionConfig:
         process, so freezing the environment into it would make a sandbox
         override depend on which module imported first.
         """
-        return os.environ.get(ENV_OVERRIDES["dataset"]) or self.configured_dataset
+        return os.environ.get(DATASET_ENV) or self.configured_dataset
 
     @property
-    def files(self) -> tuple[str, ...]:
+    def csv_filenames(self) -> tuple[str, ...]:
+        """The nine source filenames, in config order — what the raw zone holds."""
         return tuple(t.file for t in self.tables)
 
 
-def _require(mapping: dict, key: str, where: str):
+# --- Validation ------------------------------------------------------------
+#
+# Every helper takes the file name being read so the message names that file.
+# `load_config` accepts a path, so hardcoding the shipped name would misreport
+# which file the bad key is actually in.
+
+
+def _require(mapping: dict, key: str, where: str, filename: str):
     if key not in mapping:
-        raise ConfigError(f"{CONFIG_PATH.name}: `{where}` is missing `{key}`")
+        raise ConfigError(f"{filename}: `{where}` is missing `{key}`")
     return mapping[key]
 
 
-def _reject_unknown(mapping: dict, allowed: set[str], where: str) -> None:
+def _reject_unknown(mapping: dict, allowed: set[str], where: str, filename: str) -> None:
     unknown = set(mapping) - allowed
     if unknown:
         raise ConfigError(
-            f"{CONFIG_PATH.name}: `{where}` has unknown key(s) "
+            f"{filename}: `{where}` has unknown key(s) "
             f"{', '.join(sorted(unknown))}. Allowed: {', '.join(sorted(allowed))}"
         )
 
 
-def _parse_table(raw: dict, index: int) -> SourceTable:
+def _reject_duplicate_tables(tables: tuple[SourceTable, ...], filename: str) -> None:
+    counts = Counter(t.table for t in tables)
+    duplicates = sorted(name for name, count in counts.items() if count > 1)
+    if duplicates:
+        raise ConfigError(f"{filename}: duplicate table name(s) {', '.join(duplicates)}")
+
+
+def _parse_table(raw: dict, index: int, filename: str) -> SourceTable:
     where = f"tables[{index}]"
     if not isinstance(raw, dict):
-        raise ConfigError(f"{CONFIG_PATH.name}: `{where}` is not a mapping")
-    _reject_unknown(raw, _TABLE_KEYS, where)
+        raise ConfigError(f"{filename}: `{where}` is not a mapping")
+    _reject_unknown(raw, _TABLE_KEYS, where, filename)
     return SourceTable(
-        file=_require(raw, "file", where),
-        table=_require(raw, "table", where),
+        file=_require(raw, "file", where, filename),
+        table=_require(raw, "table", where, filename),
         text_columns=tuple(raw.get("text_columns") or ()),
         timestamp_columns=tuple(raw.get("timestamp_columns") or ()),
     )
+
+
+# --- Entry points ----------------------------------------------------------
 
 
 def load_config(path: Path | str | None = None) -> IngestionConfig:
@@ -110,34 +130,29 @@ def load_config(path: Path | str | None = None) -> IngestionConfig:
     at import time should use `config()` instead.
     """
     config_path = Path(path) if path is not None else CONFIG_PATH
+    filename = config_path.name
     raw = yaml.safe_load(config_path.read_text()) or {}
-    _reject_unknown(raw, _TOP_LEVEL_KEYS, "<root>")
+    _reject_unknown(raw, _TOP_LEVEL_KEYS, "<root>", filename)
 
-    pipeline = _require(raw, "pipeline", "<root>")
+    kaggle = _require(raw, "kaggle", "<root>", filename)
+    pipeline = _require(raw, "pipeline", "<root>", filename)
     tables = tuple(
-        _parse_table(entry, i) for i, entry in enumerate(_require(raw, "tables", "<root>"))
+        _parse_table(entry, index, filename)
+        for index, entry in enumerate(_require(raw, "tables", "<root>", filename))
     )
-    duplicates = {t.table for t in tables if [x.table for x in tables].count(t.table) > 1}
-    if duplicates:
-        raise ConfigError(
-            f"{config_path.name}: duplicate table name(s) {', '.join(sorted(duplicates))}"
-        )
+    _reject_duplicate_tables(tables, filename)
 
     return IngestionConfig(
-        kaggle_dataset=_require(_require(raw, "kaggle", "<root>"), "dataset", "kaggle"),
-        pipeline_name=_require(pipeline, "name", "pipeline"),
-        configured_dataset=_require(pipeline, "dataset", "pipeline"),
-        location=_require(pipeline, "location", "pipeline"),
-        schema_contract=dict(_require(raw, "schema_contract", "<root>")),
+        kaggle_dataset=_require(kaggle, "dataset", "kaggle", filename),
+        pipeline_name=_require(pipeline, "name", "pipeline", filename),
+        configured_dataset=_require(pipeline, "dataset", "pipeline", filename),
+        location=_require(pipeline, "location", "pipeline", filename),
+        schema_contract=dict(_require(raw, "schema_contract", "<root>", filename)),
         tables=tables,
     )
 
 
 @lru_cache(maxsize=1)
-def _cached() -> IngestionConfig:
-    return load_config()
-
-
 def config() -> IngestionConfig:
     """The shipped config, read once per process."""
-    return _cached()
+    return load_config()

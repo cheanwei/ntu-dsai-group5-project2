@@ -13,7 +13,7 @@ import pytest
 from ingestion.config import config
 from ingestion.kaggle_to_gcs import download_dataset, upload_to_gcs
 
-SOURCE_FILES = config().files
+SOURCE_FILES = config().csv_filenames
 
 INGEST_DATE = "2026-08-29"
 

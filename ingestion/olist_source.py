@@ -38,7 +38,7 @@ def olist_source(bucket_url: str, cfg: IngestionConfig | None = None):
     cfg = cfg or config()
 
     for table in cfg.tables:
-        files = filesystem(bucket_url=bucket_url, file_glob=table.file)
+        csv_file = filesystem(bucket_url=bucket_url, file_glob=table.file)
         # `dtype` is not belt-and-braces with the column hints below — it is the
         # half that actually saves the data. read_csv is pandas-backed, so an
         # unpinned parse turns "01234" into 1234 before dlt ever sees a hint.
@@ -49,7 +49,7 @@ def olist_source(bucket_url: str, cfg: IngestionConfig | None = None):
         # which the frozen contract then rejects, failing the whole load on a
         # blank delivery date. Arrow-backed strings carry a real null, and the
         # timestamp hint below does the typing.
-        resource = files | read_csv(
+        resource = csv_file | read_csv(
             dtype={col: "string" for col in table.text_columns},
             dtype_backend="pyarrow",
         )
