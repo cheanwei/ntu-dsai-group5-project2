@@ -1,0 +1,87 @@
+# Dagster, running the actual pipeline (§8).
+#
+#     docker compose --env-file ../../.env up --build
+#
+# Two services off one image, and no database: Dagster's default storage is
+# SQLite under DAGSTER_HOME (orchestration/dagster.yaml), and DAGSTER_HOME is
+# bind-mounted from the host, so the UI shows the same history `dagster dev`
+# writes on this machine.
+#
+# Each service loads the code location itself with `-m orchestration.definitions`
+# rather than talking to a separate gRPC code server. Fewer moving parts, with
+# one consequence worth knowing: Dagster's default run coordinator is the
+# *queued* one, so the daemon dequeues and launches every run — including the
+# ones you start in the UI — and the DefaultRunLauncher then executes them
+# beside the daemon's own copy of the code. So **every run executes in the
+# daemon container**: the daemon is not optional, and restarting it kills
+# whatever is running.
+#
+# --env-file is not optional. Compose interpolates ${...} below from the shell
+# or from --env-file, *not* from the `env_file:` key — that one only populates
+# the containers. Without it the service-account mount has nothing to bind and
+# Compose stops with the message in the `:?` below.
+#
+# Runs here are the real pipeline: they read Kaggle and write GCS and BigQuery
+# with your credentials. History stays per-machine — a GitHub Actions runner
+# writes nowhere this mount can see (§8). See README.md.
+
+name: olist-dagster
+
+x-dagster: &dagster
+  # One image for both services, built once by `webserver` below. Repeating the
+  # build stanza here would have each service export its own image under the
+  # same tag — same layers, two ids, one of them immediately dangling.
+  image: olist-dagster:latest
+  # Every variable the pipeline reads — GCP_PROJECT, GCP_RAW_BUCKET,
+  # KAGGLE_API_TOKEN, BIGQUERY_RAW_DATASET, DBT_DEV_DATASET — comes from the
+  # same .env the laptop uses. Nothing is duplicated here, so there is no
+  # second copy to drift.
+  env_file:
+    - ../../.env
+  environment:
+    # These three are the host paths that cannot mean the same thing inside a
+    # container, so they are overridden rather than inherited from .env.
+    DAGSTER_HOME: /opt/dagster/dagster_home
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/dagster/secrets/gcp-sa.json
+    DBT_PROFILES_DIR: /opt/dagster/app/transform
+  volumes:
+    # The instance: SQLite history, event logs, schedule state.
+    - ${DAGSTER_HOME:-..}:/opt/dagster/dagster_home
+    # The service-account key, mounted read-only from wherever .env says it
+    # lives on the host. Mounted, never copied: a key baked into a layer
+    # outlives every RUN that deletes it, and this key sits outside the repo.
+    - ${GOOGLE_APPLICATION_CREDENTIALS:?set GOOGLE_APPLICATION_CREDENTIALS in .env and pass --env-file ../../.env}:/opt/dagster/secrets/gcp-sa.json:ro
+    # kagglehub's cache. Without it every run re-downloads 126 MB.
+    - kaggle-cache:/root/.cache/kagglehub
+    # Where kaggle_dataset stages the CSVs for gcs_raw_files to upload. A named
+    # volume, not a bind mount: it is scratch, and data/ is gitignored anyway.
+    - staging:/opt/dagster/app/data
+  restart: unless-stopped
+
+services:
+  # The UI on localhost:3002, and where runs launched from it execute.
+  webserver:
+    <<: *dagster
+    build:
+      # The repo root: the image needs ingestion/, transform/, quality/ and
+      # orchestration/, not just this directory.
+      context: ../..
+      dockerfile: orchestration/deploy/Dockerfile
+    command: >
+      dagster-webserver -h 0.0.0.0 -p 3000
+      -m orchestration.definitions
+    ports:
+      - "3002:3000"
+
+  # Ticks daily_refresh (08:00 SGT) once the schedule is toggled on in the UI,
+  # and executes what it ticks. Off by default, and worth leaving off unless a
+  # nightly full refresh against your own GCP project is what you want.
+  daemon:
+    <<: *dagster
+    command: >
+      dagster-daemon run
+      -m orchestration.definitions
+
+volumes:
+  kaggle-cache:
+  staging:

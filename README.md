@@ -228,7 +228,7 @@ uv run dbt docs generate && uv run dbt docs serve
 | `transform/` | dbt project: 9 staging, 4 intermediate, 8 marts (§5) | A2 |
 | `quality/` | Great Expectations suites and Data Docs (§7) | B1 |
 | `orchestration/` | Dagster assets, resources, schedule, CI entrypoint (§8) | A1 |
-| `deploy/` | Two-service Compose file — stretch, week 3 only (§8) | A1 |
+| `orchestration/deploy/` | Compose deployment that runs the graph — stretch, week 3 only (§8) | A1 |
 | `notebooks/` | Four analyses over the marts (§9) | B2 |
 | `docs/` | Architecture design and diagrams | C |
 | `.github/workflows/` | Nightly run, artifacts, Pages deploy (§8) | A1 |
