@@ -508,7 +508,7 @@ records, `storage/` for compute logs, both gitignored. `orchestration/dagster.ya
 therefore carries no `storage:` block at all — omitting it *is* the choice. That
 costs nothing, provisions nothing, and covers the two places history is actually
 read: `dagster dev` on a laptop during development and the demo, and the console
-in `deploy/` (below).
+in `orchestration/deploy/` (below).
 
 **Shared history was considered and rejected.** Dagster's only alternatives to
 SQLite are Postgres and MySQL, so one instance readable from both CI and every
@@ -578,16 +578,32 @@ a container than in a virtualenv — a cost Lane A2 pays daily through week 2,
 while Lane C, which installs nothing by design (§15), gains nothing.
 
 **What is worth building, in week 3.** A deliberately slim **two-service**
-Compose file — webserver and daemon only — sharing a bind-mounted `DAGSTER_HOME`
-so the UI reads the same local SQLite history `dagster dev` writes. No database
-service, no gRPC code-location container, no `docker.sock`.
+Compose file — webserver and daemon, each loading the code location itself —
+sharing a bind-mounted `DAGSTER_HOME`, so the UI reads the same local SQLite
+history `dagster dev` writes. No database service, no gRPC code-location
+container, no `docker.sock`: two of the reference deployment's five moving
+parts. The cost of dropping the code server is that the daemon both launches
+and hosts every run — Dagster's default run coordinator is the queued one, so
+even a run submitted in the UI is executed by the daemon beside its own copy of
+the code — which makes the daemon a single point of failure and a container
+restart fatal to whatever is running. Acceptable for a laptop deployment, and
+the first thing to revisit if this were ever hosted.
 
-It buys one thing, and the file should not claim more: §8's closing assertion
-that the production path would be Dagster+ or a container on GKE becomes
-something a marker can read — cheap evidence for the architecture criterion. The
-image carries `dagster` and `dagster-webserver` only, not dbt/dlt/pandas, so it
-loads no code location; it is a history console and a topology demonstration,
-not a way to run the pipeline.
+The revision from the *console* originally planned here was made deliberately,
+and it changes what the file buys. An image carrying only `dagster` and
+`dagster-webserver` cannot load a code location, so it could show history but
+never materialise an asset — and `dagster-webserver` will not even start
+without a target unless told the empty workspace is intended. Putting the
+project's own dependencies and code in the image makes it *run* the pipeline
+instead: a run launched from the UI or ticked by the daemon does what
+`dagster dev` and the CI workflow do, with the service-account key bind-mounted
+rather than baked in.
+
+The cost is honest and bounded: the image is ~1.5 GB because it carries dbt,
+dlt, GX and pandas, and a run against it spends real Kaggle bandwidth and real
+BigQuery. §8's closing assertion — that the production path would be Dagster+
+or a container on GKE — stops being an assertion either way; it is now backed by
+a container that has actually run the graph rather than one that only draws it.
 
 Scheduled for week 3 alongside the docs publishing, never week 1, where it would
 compete with the critical path.
@@ -650,10 +666,10 @@ olist-data-platform/
 │   ├── resources.py
 │   ├── schedules.py                   # declares intent; GH Actions fires it
 │   ├── dagster.yaml                   # local SQLite instance, no DB (§8)
-│   └── run_all.py                     # materialize() entrypoint for CI
-├── deploy/                            # stretch, week 3 only  (§8)            # A1
-│   ├── docker-compose.yml             # webserver + daemon, bind-mounted home
-│   └── Dockerfile                     # dagster-webserver only
+│   ├── run_all.py                     # materialize() entrypoint for CI
+│   └── deploy/                        # stretch, week 3 only  (§8)
+│       ├── docker-compose.yml         # webserver + daemon, bind-mounted home
+│       └── Dockerfile                 # project deps; runs the pipeline
 ├── notebooks/                         # one per person, nbstripout installed    B2
 ├── docs/
 │   ├── architecture-design.md         # this file
@@ -712,10 +728,12 @@ Three or four pages maximum.
 Either way, it is framed in the deck as evidence that the marts are consumable
 without SQL.
 
-The second stretch goal is the two-service Compose file in `deploy/` (§8), which
-turns the claim that this would run as a container in production into something
-a marker can read. It depends on nothing else — the Dagster instance it reads is
-local SQLite — and is worth roughly two hours in week 3, or none at all.
+The second stretch goal is the Compose deployment in `orchestration/deploy/`
+(§8), which turns the claim that this would run as a container in production
+into something a marker can read — and, since it carries the project's own
+dependencies, actually run. It depends on nothing else — the Dagster instance
+it reads is local SQLite — and is worth roughly two hours in week 3, or none at
+all.
 
 Persistent *shared* run history is not a stretch goal; it is out of scope, and
 §8 gives the reasoning.

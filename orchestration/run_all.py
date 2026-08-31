@@ -14,8 +14,9 @@ designed for, not discovered:
   Permanent URLs, citable from the report and the deck.
 - **Run history is local.** Set `DAGSTER_HOME` and Dagster keeps history as
   SQLite under it (§8, `dagster.yaml`) — enough for `dagster dev` on a laptop
-  and the console in `deploy/`. Shared history across CI and every laptop would
-  need a hosted database; the project deliberately has none.
+  and the console in `orchestration/deploy/`. Shared history across CI and
+  every laptop would need a hosted database; the project deliberately has
+  none.
 
 Say so in the report: run history is ephemeral in CI by design because the
 orchestrator is not hosted. A documented limitation reads as engineering
