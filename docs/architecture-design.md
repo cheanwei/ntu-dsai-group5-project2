@@ -451,7 +451,7 @@ kaggle_dataset          (asset: download at pinned version → GCS)
 - `dagster-dlt`'s `DagsterDltResource` wraps the ingestion pipeline.
 - GX results surface as Dagster **asset checks**, so a quality failure shows up
   against the asset that produced it rather than as an unrelated task failure.
-- Schedule: daily, 02:00 SGT.
+- Schedule: daily, 08:00 SGT.
 
 ### Where Dagster runs
 

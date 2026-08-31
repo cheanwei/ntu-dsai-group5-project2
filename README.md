@@ -86,6 +86,45 @@ shell:
 set -a; source .env; set +a
 ```
 
+### The full pipeline, end to end
+
+Two commands from a filled-in `.env` to populated marts:
+
+```bash
+uv run python orchestration/run_all.py                   # Kaggle → GCS → olist_raw
+uv run dbt build --project-dir transform --target dev    # olist_raw → staging → intermediate → marts
+```
+
+The first materialises the whole Dagster asset graph in one process — the same
+entrypoint GitHub Actions runs daily at 08:00 SGT. Budget roughly five minutes
+cold, nearly all of it the 126 MB Kaggle download; afterwards `data/staging/`
+and the raw-zone prefix are both populated and a re-run is much faster. The
+second builds and tests the 21 dbt models.
+
+**dbt is a separate command because it is not in the asset graph yet**
+(`TODO(A1)` in `orchestration/assets.py`); Great Expectations (`TODO(B1)`) is
+the same story. When both land, `run_all.py` covers the whole thing and the
+second command goes away. Until then the two halves share a warehouse, not a
+run: nothing stops you from building dbt against a raw zone that failed to
+load, so check the first command exited 0.
+
+Confirm what actually landed:
+
+```bash
+bq query --use_legacy_sql=false \
+  "SELECT COUNT(*) FROM \`${GCP_PROJECT}.olist_raw.olist_orders_dataset\`"
+```
+
+About 99k orders. If it returns zero rows or the table is missing, the load did
+not reach BigQuery — read the Dagster output rather than re-running blind.
+
+To run it the way CI does, without waiting for 08:00: the **pipeline** workflow
+has `workflow_dispatch`, so the Actions tab can trigger it on demand. That path
+also generates dbt docs and publishes the reports to Pages.
+
+The sections below are the same pipeline broken into pieces — use them when
+iterating on one stage rather than running the lot.
+
 ### Ingestion — Kaggle → GCS → BigQuery (`olist_raw`)
 
 ```bash
@@ -117,7 +156,7 @@ download naming the file (the version pin no longer matching what Kaggle
 serves). Both are meant to stop the run.
 
 ```bash
-uv run pytest                    # 29 tests, no credentials or network needed
+uv run pytest                    # 51 tests, no credentials or network needed
 ```
 
 #### If the load fails with `CERTIFICATE_VERIFY_FAILED`
@@ -154,18 +193,18 @@ Then resume without re-downloading — the raw zone is already populated:
 uv run python -m scripts.run_ingestion --bucket-url gs://<bucket>/<ingest-date>
 ```
 
-### Orchestration — not wired yet
+### Orchestration
 
-Both commands below are the intended entry points and **currently raise
-`NotImplementedError`**: `orchestration/assets.py` and `resources.py` are still
-`TODO(A1)`. Until they are written, ingestion runs through the block above.
+The ingestion half of the graph is wired: `kaggle_dataset` → `gcs_raw_files` →
+nine `olist_raw/<table>` assets, one per source table. The dbt models
+(`TODO(A1)`) and the GX asset checks (`TODO(B1)`) join the same graph next.
 
 ```bash
 # Development and demo — webserver + daemon on localhost:3000.
 # The asset graph here is the strongest visual for the Technical Overview slide.
 uv run dagster dev -m orchestration.definitions
 
-# The whole graph, in-process. What GitHub Actions runs nightly.
+# The whole graph, in-process.
 uv run python orchestration/run_all.py
 ```
 
