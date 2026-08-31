@@ -9,6 +9,7 @@ BASE = f"http://localhost:{5001}"
 # set_page_config must be the first Streamlit call on the page.
 st.set_page_config(page_title="Olist Brazilian E-Commerce", layout="wide")
 st.title("Olist Brazilian E-Commerce")           # big heading
+st.subheader("Revenue of Olist Brazilian E-Commerce split by Cities")  # smaller heading
 st.caption(f"Every number on this page came from our own API at {BASE}")
 
 
