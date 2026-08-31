@@ -11,8 +11,8 @@ name: pipeline
 
 on:
   schedule:
-    # 02:00 SGT == 18:00 UTC the previous day. Must match schedules.py.
-    - cron: "0 18 * * *"
+    # 08:00 SGT == 00:00 UTC, the same day. Must match schedules.py.
+    - cron: "0 0 * * *"
   workflow_dispatch:
   push:
     branches: [main]

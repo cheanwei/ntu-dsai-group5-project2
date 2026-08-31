@@ -26,19 +26,54 @@ Owner: lane A1.
 
 from __future__ import annotations
 
+import os
 import sys
+from collections.abc import Generator
+from contextlib import contextmanager
+from pathlib import Path
+
+from dagster import DagsterInstance, materialize
+
+# Running this as a path — `python orchestration/run_all.py`, which is what the
+# workflow does — puts orchestration/ on sys.path rather than the repo root, so
+# `import orchestration` would fail with what looks like a broken install. The
+# `-m` form does not need this; the line is here because the CI step, the
+# README and `scripts/run_ingestion.py` all invoke a file by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from orchestration.definitions import all_assets  # noqa: E402
+from orchestration.resources import build_resources  # noqa: E402
+
+
+@contextmanager
+def build_instance() -> Generator[DagsterInstance]:
+    """The instance this run records into.
+
+    `DagsterInstance.get()` *raises* when `DAGSTER_HOME` is unset rather than
+    falling back, so the fallback is made here. On a runner destroyed after the
+    job the history is worthless either way (see the module docstring), and
+    refusing to start over storage nobody will read would be the wrong failure.
+    """
+    if os.environ.get("DAGSTER_HOME"):
+        yield DagsterInstance.get()
+    else:
+        print("DAGSTER_HOME is not set: running with an ephemeral instance, no run history.")
+        with DagsterInstance.ephemeral() as instance:
+            yield instance
 
 
 def main() -> int:
-    """Materialise every asset and return a process exit code.
-
-    TODO(A1):
-        from dagster import DagsterInstance, materialize
-        instance = DagsterInstance.get()   # local history if DAGSTER_HOME is set
-        result = materialize([...], resources=..., instance=instance)
-        return 0 if result.success else 1
-    """
-    raise NotImplementedError("TODO(A1): materialize() the asset graph")
+    """Materialise every asset and return a process exit code."""
+    with build_instance() as instance:
+        result = materialize(
+            all_assets,
+            resources=build_resources(),
+            instance=instance,
+            # Return an exit code rather than a traceback: the workflow's later
+            # steps run `if: always()` and publish the reports either way (§8).
+            raise_on_error=False,
+        )
+    return 0 if result.success else 1
 
 
 if __name__ == "__main__":

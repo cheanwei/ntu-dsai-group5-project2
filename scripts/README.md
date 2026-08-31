@@ -55,7 +55,7 @@ Two constraints:
   `DEFAULT_ACCESS_TOKEN_EXPIRATION` so a token lasts the length of the project.
   Kaggle may clamp the request server-side. For CI still prefer a durable token
   from `kaggle.com/settings` as the `KAGGLE_API_TOKEN` secret — a token that
-  lapses mid-project is a nightly run that fails at 02:00 (§8).
+  lapses mid-project is a nightly run that fails at 08:00 (§8).
 
 ### Why this does not use `kaggle auth print-access-token --expiration`
 

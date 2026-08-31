@@ -193,7 +193,7 @@ def mint_token_via_oauth(expiration: str) -> str | None:
     than accepting kagglesdk's 12-hour default, so a token lasts the length of
     the project. Kaggle may clamp the request server-side. For CI, still prefer
     a durable token from kaggle.com/settings as the KAGGLE_API_TOKEN secret —
-    a token that expires mid-project is a nightly run that fails at 02:00 (§8).
+    a token that expires mid-project is a nightly run that fails at 08:00 (§8).
     """
     kaggle = shutil.which("kaggle")
     if kaggle is None:

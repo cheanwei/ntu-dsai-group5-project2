@@ -34,6 +34,8 @@ _storage/
 # history/ and storage/ there, plus these on first launch.
 dagster_home/
 tmp*/
+# The CLI writes one of these per invocation when DAGSTER_HOME is unset.
+.tmp_dagster_home_*/
 .dagster/
 history/
 storage/
