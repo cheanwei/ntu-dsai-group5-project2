@@ -306,6 +306,42 @@ The `NumPy` warning gcloud prints on startup is unrelated. It affects tunnel
 
 Keep the tunnel in the foreground — it is the connection, not a daemon.
 
+### `4003: failed to connect to backend`
+
+A different error, and a real one — but almost always transient:
+
+    ERROR: [52] Error during local connection to [('127.0.0.1', 55942)]:
+    Error while connecting [4003: 'failed to connect to backend'].
+    (Failed to connect to port 3002)
+
+This means the tunnel reached Google and Google could not reach port 3002 *on
+the VM*. Nine times in ten you are tunnelling during a deploy. `docker compose
+up -d` stops the old webserver before starting the new one, and the new one
+then spends 40–90 seconds importing dbt, dlt and pandas before it binds — so
+there is a window, once per deploy, where nothing is listening.
+
+**There is no zero-downtime version of this on one 1 GB node.** Rolling a new
+container up beside the old one means two webservers resident at once, and the
+memory is not there. A minute of UI downtime per deploy is the cost of the
+machine size, not a bug.
+
+The tunnel process survives it — the failure is per-connection, and the
+listener stays up — so wait and reload the page. If the tunnel itself exited,
+restart it.
+
+When it is *not* transient, check in this order:
+
+    # is anything actually listening?
+    gcloud compute ssh dagster-vm --zone us-central1-a --tunnel-through-iap \
+      --command 'sudo ss -lntp | grep 3002; sudo docker ps -a'
+
+    # did the webserver crash on boot? (OOM shows up here)
+    gcloud compute ssh dagster-vm --zone us-central1-a --tunnel-through-iap \
+      --command 'sudo docker logs --tail=50 olist-dagster-webserver-1'
+
+A container in `Restarting` with nothing in the log is the OOM signature — see
+[Read §8 first](#read-8-first) for the memory headroom this machine has.
+
     gcloud compute ssh dagster-vm --zone us-central1-a --tunnel-through-iap
 
     gcloud compute ssh dagster-vm --zone us-central1-a --tunnel-through-iap \

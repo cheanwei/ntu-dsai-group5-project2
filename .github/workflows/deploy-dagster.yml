@@ -43,6 +43,16 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/deploy-dagster.yml"
+      # Last match wins in a GitHub path filter, so this exclusion overrides the
+      # globs above. Without it every prose commit under orchestration/ —
+      # deploy/README.md most of all — rebuilds a 2 GB image and restarts the
+      # containers, which costs runner minutes, another retained image in
+      # Artifact Registry, and a minute of UI downtime for a typo fix.
+      #
+      # The Dockerfile does COPY the markdown into the image, so after a
+      # docs-only commit the image is one commit stale in its README. That is
+      # the intended trade: the next real change ships it.
+      - "!**/*.md"
 
 # One deploy at a time. Two concurrent runs would race on the same .env and
 # `compose up`, and cancel-in-progress is wrong here: a cancelled deploy can
