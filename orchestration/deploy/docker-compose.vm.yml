@@ -1,0 +1,119 @@
+# Dagster on `dagster-vm` — the hosted variant of docker-compose.yml.
+#
+# Installed on the VM as /opt/dagster/app/docker-compose.yml, by
+# provision_vm.sh once and by the deploy workflow on every run. Driven from
+# there, not from a laptop:
+#
+#     cd /opt/dagster/app && sudo docker compose up -d
+#
+# Same two services, same image, same SQLite-under-DAGSTER_HOME storage as the
+# local file. Four differences, all forced by the machine rather than chosen:
+#
+# 1. It PULLS, it does not build. `uv sync` over pandas, dbt and dlt on a
+#    shared-core e2-micro with 1 GB takes tens of minutes when it does not OOM
+#    outright. GitHub Actions builds; this file consumes the result.
+#
+# 2. DAGSTER_IMAGE is pinned to a commit SHA, not to :latest. Compose compares
+#    the image *reference* to decide whether a container is stale, so with a
+#    floating tag `up -d` would leave the old container running after a pull
+#    and the deploy would silently no-op. The workflow writes the SHA into
+#    .env; that changing is what makes the container recreate.
+#
+# 3. The host paths are absolute and fixed. The local file resolves
+#    ${DAGSTER_HOME} and ${GOOGLE_APPLICATION_CREDENTIALS} from whatever the
+#    shell happens to export — the "which history you see" trap in README.md.
+#    On a single-purpose VM there is one right answer for each, so it is
+#    written down instead of interpolated.
+#
+# 4. No `--env-file` dance. .env sits beside this file, which is both the
+#    directory Compose interpolates ${...} from and the path `env_file:`
+#    resolves against.
+#
+# Reachability: the VM has a public IP, and is not reachable on it. The address
+# carries egress — kaggle.com — while ingress on 22 and 3002 is allowed only
+# from IAP's 35.235.240.0/20 and denied from everywhere else, including by an
+# explicit rule that overrides the default VPC's internet-wide SSH allow. See
+# provision_vm.sh, step 4.
+#
+# The UI still binds 0.0.0.0:3002 rather than 127.0.0.1, necessarily: IAP TCP
+# forwarding connects to the instance's internal NIC and would never reach a
+# loopback binding. The firewall, not the bind address, is what closes it.
+
+name: olist-dagster
+
+x-dagster: &dagster
+  # Written to .env by the deploy workflow as
+  # <region>-docker.pkg.dev/<project>/dagster/olist-dagster:<sha>.
+  # The :? makes a missing or truncated .env fail here, with this sentence,
+  # rather than as a confusing `pull access denied` on an empty tag.
+  image: ${DAGSTER_IMAGE:?DAGSTER_IMAGE is unset — /opt/dagster/app/.env is missing or incomplete; re-run the deploy workflow}
+  env_file:
+    - .env
+  environment:
+    # In-container paths. They override whatever .env says, exactly as in the
+    # local compose file: these three name host locations that cannot mean the
+    # same thing on both sides of the mount.
+    DAGSTER_HOME: /opt/dagster/dagster_home
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/dagster/secrets/gcp-sa.json
+    DBT_PROFILES_DIR: /opt/dagster/app/transform
+  volumes:
+    # Run history, event logs and schedule state. Unlike the GitHub Actions
+    # runner — destroyed after every job, which is why §8 calls scheduled-run
+    # history ephemeral — this survives restarts, redeploys and reboots. It is
+    # the one thing the VM buys that Actions cannot.
+    - /opt/dagster/dagster_home:/opt/dagster/dagster_home
+    # The service-account key, delivered by the deploy workflow to a 0700
+    # directory and mounted read-only. Never in the image (.dockerignore
+    # excludes *.json), never in the repo, and never in a compose layer.
+    #
+    # The VM also has its own attached identity, which is what authenticates
+    # the image pull — but transform/profiles.yml specifies `method:
+    # service-account` with an explicit keyfile for every target, so dbt needs
+    # a file on disk regardless. Adding an ADC-based (`method: oauth`) target
+    # would let this mount go away entirely; that is a profiles.yml change, not
+    # a deployment one.
+    - /opt/dagster/secrets/gcp-sa.json:/opt/dagster/secrets/gcp-sa.json:ro
+    - kaggle-cache:/root/.cache/kagglehub
+    - staging:/opt/dagster/app/data
+  # Not `always`: with `always` a container that crash-loops on a bad config
+  # also comes back after `docker compose stop`, so there is no way to hold it
+  # down while you fix it. `unless-stopped` still survives VM reboots, because
+  # docker.service is enabled.
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  webserver:
+    <<: *dagster
+    command: >
+      dagster-webserver -h 0.0.0.0 -p 3000
+      -m orchestration.definitions
+    ports:
+      - "3002:3000"
+    healthcheck:
+      # Dagster serves this without a GraphQL round-trip, so it answers while
+      # the code location is still loading — which on this machine takes the
+      # better part of a minute. start_period covers that.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:3000/server_info', timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # Executes every run, including the ones submitted from the UI: the default
+  # run coordinator is the queued one, so the daemon dequeues and the
+  # DefaultRunLauncher executes beside it. Stop this and runs sit in QUEUED
+  # forever. It also ticks daily_refresh (08:00 SGT) once enabled in the UI —
+  # which on this VM finally means something, since unlike `dagster dev` on a
+  # laptop the process is still alive at 08:00.
+  daemon:
+    <<: *dagster
+    command: >
+      dagster-daemon run
+      -m orchestration.definitions
+
+volumes:
+  kaggle-cache:
+  staging:

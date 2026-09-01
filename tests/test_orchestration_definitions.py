@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dagster import AssetKey, AssetSelection, Definitions
+from dagster import AssetKey, AssetSelection, DefaultScheduleStatus, Definitions
 
 from ingestion.config import config
 from orchestration.definitions import defs
@@ -76,9 +76,13 @@ def test_the_daily_refresh_fires_at_eight_in_the_morning_singapore_time():
 
 
 def test_the_two_crons_name_the_same_instant():
-    """Dagster resolves its cron in `TIMEZONE`; GitHub Actions has no timezone
-    field and resolves in UTC. The conversion is done by hand in `schedules.py`,
-    which is exactly the kind of arithmetic that is wrong by a day."""
+    """Dagster resolves its cron in `TIMEZONE`; a UTC-only scheduler does not.
+    The conversion is done by hand in `schedules.py`, which is exactly the kind
+    of arithmetic that is wrong by a day.
+
+    DAILY_CRON_UTC no longer fires anything — the daemon owns the schedule —
+    but it is still the number to hand any UTC-only scheduler, so it has to go
+    on meaning 08:00 SGT."""
     local = datetime(2026, 1, 1, int(DAILY_CRON.split()[1]), tzinfo=ZoneInfo(TIMEZONE))
 
     assert local.astimezone(UTC).hour == int(DAILY_CRON_UTC.split()[1])
@@ -90,13 +94,29 @@ def test_the_schedule_covers_every_asset():
     assert job.selection == AssetSelection.all()
 
 
-def test_the_actions_cron_matches_the_declared_schedule():
-    """GitHub Actions holds the scheduler role (§8), so its cron is the one
-    that actually fires. A schedule changed here and not there would be a
-    declared intent the pipeline never honours."""
+def test_no_workflow_competes_with_the_daemon_for_the_schedule():
+    """The dagster-daemon on dagster-vm fires `daily_refresh` (schedules.py).
+
+    This test used to assert the opposite — that pipeline.yml's cron matched
+    the declared schedule, because Actions held the scheduler role (§8). It now
+    asserts the inverse, and the inverse is the one that can actually break: a
+    cron restored here would run `AssetSelection.all()` at the same instant as
+    the daemon, and two simultaneous replace-loads into the same nine BigQuery
+    tables is a race nobody would attribute to a workflow trigger.
+    """
     crons = re.findall(r'cron:\s*"([^"]+)"', WORKFLOW.read_text())
 
-    assert crons == [DAILY_CRON_UTC]
+    assert crons == [], (
+        f"pipeline.yml declares cron(s) {crons}. The daemon on dagster-vm owns "
+        f"the schedule now; see orchestration/schedules.py."
+    )
+
+
+
+def test_the_schedule_runs_without_being_toggled_on():
+    """A STOPPED default means the daily run is silently absent on any fresh
+    DAGSTER_HOME until someone notices and clicks it on in the UI."""
+    assert daily_refresh_schedule().default_status == DefaultScheduleStatus.RUNNING
 
 
 # --- run_all.py ------------------------------------------------------------
