@@ -370,10 +370,14 @@ jobs:
             echo
             echo '```'
             echo "gcloud compute start-iap-tunnel ${VM_NAME} 3002 \\"
-            echo "  --local-host-port=localhost:3002 --zone ${ZONE}"
+            echo "  --local-host-port=127.0.0.1:3002 --zone ${ZONE}"
             echo '```'
             echo
-            echo "then open <http://localhost:3002>."
+            echo "then open <http://127.0.0.1:3002>."
+            echo
+            echo "Use 127.0.0.1 rather than localhost: on macOS localhost resolves to ::1"
+            echo "first, and the tunnel logs repeated \`[Errno 9] Bad file descriptor\` as"
+            echo "IPv6 connections are torn down. Harmless, but noisy."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Shred staged credentials

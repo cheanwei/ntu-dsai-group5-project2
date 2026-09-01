@@ -284,9 +284,27 @@ project.
 The UI has no address. Open a tunnel and it is on localhost:
 
     gcloud compute start-iap-tunnel dagster-vm 3002 \
-      --local-host-port=localhost:3002 --zone us-central1-a
+      --local-host-port=127.0.0.1:3002 --zone us-central1-a
 
-    # then http://localhost:3002
+    # then http://127.0.0.1:3002
+
+**`127.0.0.1`, not `localhost`.** On macOS `localhost` resolves to `::1` first,
+so the tunnel binds IPv6 and then logs a stream of these as the browser tears
+connections down:
+
+    ERROR: [17] Error during local connection to [('::1', 55035, 0, 0)]:
+    [Errno 9] Bad file descriptor
+
+They are noise, not failure — gcloud logs an ordinary closed socket at ERROR
+level, and a browser closes sockets constantly (speculative connections,
+keep-alive expiry, and Dagster's own GraphQL WebSocket reconnecting). Binding
+IPv4 avoids them: the same session over `127.0.0.1` serves the page, GraphQL
+and six concurrent requests with an empty log.
+
+The `NumPy` warning gcloud prints on startup is unrelated. It affects tunnel
+*upload* bandwidth, and browsing a UI is almost entirely download.
+
+Keep the tunnel in the foreground — it is the connection, not a daemon.
 
     gcloud compute ssh dagster-vm --zone us-central1-a --tunnel-through-iap
 

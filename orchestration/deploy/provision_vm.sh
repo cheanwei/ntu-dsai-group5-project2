@@ -505,8 +505,12 @@ image, the .env and the service-account key are the deploy workflow's job.
 
   3. Open the UI (ingress is IAP-only — the tunnel is the only way in):
        gcloud compute start-iap-tunnel ${VM_NAME} ${UI_PORT} \\
-         --local-host-port=localhost:${UI_PORT} --zone ${ZONE} --project ${PROJECT_ID}
-     then http://localhost:${UI_PORT}
+         --local-host-port=127.0.0.1:${UI_PORT} --zone ${ZONE} --project ${PROJECT_ID}
+     then http://127.0.0.1:${UI_PORT}
+
+     127.0.0.1, not localhost: on macOS localhost resolves to ::1 first, and
+     the tunnel logs a stream of "[Errno 9] Bad file descriptor" on IPv6
+     connection teardown. Noise, not failure — but avoidable.
 
   SSH:   gcloud compute ssh ${VM_NAME} --zone ${ZONE} --tunnel-through-iap
   Logs:  gcloud compute ssh ${VM_NAME} --zone ${ZONE} --tunnel-through-iap \\
