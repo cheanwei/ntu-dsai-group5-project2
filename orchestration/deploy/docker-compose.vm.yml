@@ -57,6 +57,12 @@ x-dagster: &dagster
     GOOGLE_APPLICATION_CREDENTIALS: /opt/dagster/secrets/gcp-sa.json
     DBT_PROFILES_DIR: /opt/dagster/app/transform
   volumes:
+    # This mount SHADOWS the image's $DAGSTER_HOME, including the dagster.yaml
+    # the Dockerfile copies there. The deploy workflow therefore delivers
+    # orchestration/dagster.yaml to the host path as well; without it Dagster
+    # falls back to its built-in defaults and the repo's `telemetry: enabled:
+    # false` quietly stops applying.
+    #
     # Run history, event logs and schedule state. Unlike the GitHub Actions
     # runner — destroyed after every job, which is why §8 calls scheduled-run
     # history ephemeral — this survives restarts, redeploys and reboots. It is

@@ -196,6 +196,13 @@ jobs:
 
           cp orchestration/deploy/docker-compose.vm.yml .deploy/docker-compose.yml
 
+          # The instance config, which the image cannot supply here. The
+          # Dockerfile copies it to $DAGSTER_HOME, but docker-compose.vm.yml
+          # bind-mounts the host's dagster_home straight over that directory
+          # and shadows it — so without this the VM runs on Dagster's built-in
+          # defaults and `telemetry: enabled: false` silently stops applying.
+          cp orchestration/dagster.yaml .deploy/dagster.yaml
+
           # The secrets themselves were checked in `Validate secrets` above.
           # What is new here is the image reference, which is composed rather
           # than supplied: an empty tag reaches the VM as `pull access denied`,
@@ -212,7 +219,7 @@ jobs:
           "${SSH[@]}" --command 'install -d -m 700 ~/deploy-staging'
 
           gcloud compute scp \
-            .deploy/.env .deploy/gcp-sa.json .deploy/docker-compose.yml \
+            .deploy/.env .deploy/gcp-sa.json .deploy/docker-compose.yml .deploy/dagster.yaml \
             "${VM_NAME}:deploy-staging/" \
             --zone "${ZONE}" --tunnel-through-iap --quiet
 
@@ -222,6 +229,7 @@ jobs:
             sudo install -m 600 -o root -g root ~/deploy-staging/gcp-sa.json /opt/dagster/secrets/gcp-sa.json
             sudo install -m 600 -o root -g root ~/deploy-staging/.env ${APP_DIR}/.env
             sudo install -m 644 -o root -g root ~/deploy-staging/docker-compose.yml ${APP_DIR}/docker-compose.yml
+            sudo install -m 644 -o root -g root ~/deploy-staging/dagster.yaml /opt/dagster/dagster_home/dagster.yaml
             rm -rf ~/deploy-staging
           "
 
