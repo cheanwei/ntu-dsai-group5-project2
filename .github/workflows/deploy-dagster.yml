@@ -25,6 +25,11 @@ name: deploy-dagster
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Deploy even when DEPLOY_DAGSTER is false"
+        type: boolean
+        default: false
   push:
     branches: [main]
     # Only what actually ends up in the image, plus the deployment files
@@ -60,7 +65,86 @@ env:
   APP_DIR: /opt/dagster/app
 
 jobs:
+  # A kill switch for the deploy, as a repository variable rather than a code
+  # change: set DEPLOY_DAGSTER=false to stop pushing new images and restarting
+  # containers, and unset it (or set anything else) to resume.
+  #
+  # Why a whole job rather than an `if:` on `deploy`. A skipped job renders as a
+  # grey tick with the condition hidden behind a hover, so the failure mode is
+  # someone pushing, seeing green, and assuming their change is live. This job
+  # costs a few seconds and writes the decision — and how to undo it — into the
+  # run summary where it will actually be read.
+  #
+  # Read what it does NOT save before relying on it: the VM keeps running, its
+  # external IP keeps billing, and daily_refresh keeps firing on the image
+  # already deployed. See orchestration/deploy/README.md.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      - name: Decide whether to deploy
+        id: decide
+        env:
+          DEPLOY_DAGSTER: ${{ vars.DEPLOY_DAGSTER }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          # Unset must mean "deploy". A variable that has never been created
+          # interpolates to empty, and defaulting that to skip would silently
+          # disable deployment for anyone who forked or re-created the repo.
+          setting="$(printf '%s' "${DEPLOY_DAGSTER}" | tr '[:upper:]' '[:lower:]')"
+          case "${setting}" in
+            false|no|off|0) want=false ;;
+            *)              want=true  ;;
+          esac
+
+          forced=""
+          if [ "${want}" = "false" ] && [ "${FORCE}" = "true" ]; then
+            want=true
+            forced=" — overridden by the \`force\` input"
+          fi
+
+          echo "deploy=${want}" >> "$GITHUB_OUTPUT"
+
+          {
+            if [ "${want}" = "true" ]; then
+              echo "### Deploying${forced}"
+              echo
+              echo "\`DEPLOY_DAGSTER\` = \`${DEPLOY_DAGSTER:-(unset)}\`"
+              echo
+              echo "To pause deployments without touching the code:"
+              echo
+              echo '```'
+              echo "gh variable set DEPLOY_DAGSTER --body false"
+              echo '```'
+            else
+              echo "### Deploy skipped"
+              echo
+              echo "\`DEPLOY_DAGSTER\` is \`${DEPLOY_DAGSTER}\`, so no image was built and the VM was not touched."
+              echo
+              echo "**The VM is still running and still billing.** This switch only stops"
+              echo "*deployments*; it does not stop the external IP charge (~\$3.65/mo) and"
+              echo "does not stop \`daily_refresh\` firing at 08:00 SGT on the image already"
+              echo "deployed. To actually stop spending:"
+              echo
+              echo '```'
+              echo "gcloud compute instances stop dagster-vm --zone us-central1-a"
+              echo '```'
+              echo
+              echo "To resume deployments:"
+              echo
+              echo '```'
+              echo "gh variable set DEPLOY_DAGSTER --body true      # or: gh variable delete DEPLOY_DAGSTER"
+              echo '```'
+              echo
+              echo "Or re-run this workflow with the \`force\` input to deploy once without changing the variable."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
+    needs: guard
+    if: needs.guard.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
 

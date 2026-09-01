@@ -344,6 +344,7 @@ Secrets and variables it reads:
 
 | Repository variable | Default |
 |---|---|
+| `DEPLOY_DAGSTER` | unset — deploys. Set to `false` to pause; see [Pausing deployments](#pausing-deployments) |
 | `GCP_LOCATION` | `US` |
 | `BIGQUERY_RAW_DATASET` | `olist_raw` |
 | `BIGQUERY_MARTS_DATASET` | `olist_marts` |
@@ -372,6 +373,65 @@ home so it is never briefly world-readable in `/tmp`. Rotating it is a re-run
 of the workflow, not a login to the machine. Adding a `method: oauth` target to
 `profiles.yml` would let the key and its mount disappear entirely — that is a
 profiles change, not a deployment one.
+
+## Pausing deployments
+
+    gh variable set DEPLOY_DAGSTER --body false     # pause
+    gh variable delete DEPLOY_DAGSTER               # resume
+    gh workflow run deploy-dagster.yml -f force=true  # deploy once anyway
+
+A `guard` job reads it and the `deploy` job runs only if it says so. `false`,
+`no`, `off` and `0` all pause (case-insensitively); **anything else deploys**,
+including unset and unrecognised values. That asymmetry is deliberate — a kill
+switch that failed toward "off" would silently disable deployment for anyone
+who forked the repo or re-created its variables.
+
+The switch is a whole job rather than an `if:` on `deploy` because a skipped job
+renders as a grey tick with the condition hidden behind a hover. The failure
+mode that buys you is someone pushing, seeing green, and assuming their change
+is live. The guard job writes the decision, and how to undo it, into the run
+summary instead.
+
+### What it actually saves, and what it does not
+
+Be clear about this before relying on it to control spend. Pausing deployments
+stops:
+
+- **~8 minutes of Actions runner time per push.** On a private repo that counts
+  against the monthly free allowance.
+- **A new ~2 GB image in Artifact Registry per deploy.** Worth watching: the
+  weekly prune in `startup-script.sh` reclaims superseded images *on the VM*,
+  and nothing prunes the registry. Every SHA-tagged version is retained, and
+  Artifact Registry is free only to 0.5 GB. Ten deploys is ~20 GB.
+
+It does **not** stop:
+
+- **The external IP, ~$3.65/mo**, billed for as long as the VM is running.
+- **`daily_refresh` at 08:00 SGT**, which keeps firing on the image already
+  deployed — with the full Kaggle download, nine GCS writes and nine BigQuery
+  replace-loads each time.
+
+So this is a switch for "stop shipping changes", not for "stop spending". The
+levers for spend, in increasing order of severity:
+
+    # stop the nightly run, keep the UI and history
+    #   toggle daily_refresh off in the UI, or:
+    #   dagster schedule stop daily_refresh   (inside the daemon container)
+
+    # stop everything; releases the IP, keeps the disk and all run history
+    gcloud compute instances stop dagster-vm --zone us-central1-a
+
+    # delete old images from the registry (keeps the two most recent)
+    gcloud artifacts docker images list \
+      us-central1-docker.pkg.dev/ntu-dsai-6-ycw/dagster/olist-dagster \
+      --format='value(version)' --sort-by=~CREATE_TIME | tail -n +3 \
+      | xargs -I{} gcloud artifacts docker images delete \
+          us-central1-docker.pkg.dev/ntu-dsai-6-ycw/dagster/olist-dagster@{} --quiet
+
+Stopping the VM is the one that matters. It releases the ephemeral address, so
+the only remaining charge is the boot disk — 30 GB standard, inside the free
+tier. Starting it again re-runs the startup script and the containers come back
+on their own (`restart: unless-stopped` plus an enabled `docker.service`).
 
 ## Teardown
 
