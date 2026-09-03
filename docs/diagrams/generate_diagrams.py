@@ -52,21 +52,22 @@ def high_level_architecture() -> Diagram:
             "olist_marts  (tables)\nSTAR SCHEMA\n4 facts + 4 conformed dims\npartitioned + clustered\n→ see diagram 02", "mart", font=10),
 
         Box("dbttests", 580, 462, 170, 78,
-            "dbt tests\nunique · not_null\nrelationships\naccepted_values", "quality", font=10),
+            "dbt tests — tier 1\nunique · not_null\nrelationships\naccepted_values", "quality", font=10),
         Box("gx", 580, 555, 170, 72,
-            "Great Expectations\nbusiness invariants\n+ Data Docs HTML", "quality", font=10),
+            "dbt-expectations — tier 2\nbusiness invariants\ninside dbt build", "quality", font=10),
 
         Box("nb", 1195, 210, 210, 95,
             "Jupyter + pandas\nSQLAlchemy\n(sqlalchemy-bigquery)\nsales · products · RFM", "consume", font=10),
         Box("dbtdocs", 1195, 320, 210, 68,
             "dbt docs\nlineage graph + catalog", "consume", font=10),
         Box("gxdocs", 1195, 403, 210, 68,
-            "GX Data Docs\nquality report artefact", "consume", font=10),
+            "Dagster asset checks\npass/fail per asset", "consume", font=10),
 
-        Box("dagster", 40, 700, 1390, 100,
+        Box("dagster", 40, 700, 1390, 112,
             "ORCHESTRATION — Dagster (software-defined assets)\n"
-            "dlt assets  →  @dbt_assets (one Dagster asset auto-generated per dbt model)  →  GX validation as asset checks\n"
-            "`dagster dev` locally for development and demo   ·   scheduled daily by GitHub Actions (no daemon, no hosting)", "orch", font=11),
+            "dlt assets  →  @dbt_assets (one Dagster asset auto-generated per dbt model)  →  dbt tests as asset checks\n"
+            "`dagster dev` locally   ·   webserver + daemon in Docker Compose on a GCP e2-micro VM   ·   daemon holds the daily schedule\n"
+            "GitHub Actions builds and deploys the image; UI reached over an IAP tunnel (ingress is IAP-only)", "orch", font=11),
 
         Box("legend", 40, 830, 1390, 62,
             "Solid = data flow   ·   Dashed = control / validation   ·   Raw zone makes every downstream step replayable\n"

@@ -13,7 +13,7 @@
 #
 # This does not replace pipeline.yml, and pipeline.yml no longer competes with
 # it: the daemon this workflow ships now owns the 08:00 SGT schedule, and
-# pipeline.yml has been reduced to publishing dbt and GX reports to Pages on
+# pipeline.yml has been reduced to publishing the dbt reports to Pages on
 # demand. Two schedulers firing AssetSelection.all() at the same instant would
 # race on the same nine BigQuery tables.
 #
@@ -277,7 +277,7 @@ jobs:
           GCP_RAW_BUCKET=${{ secrets.GCP_RAW_BUCKET }}
           BIGQUERY_RAW_DATASET=${{ vars.BIGQUERY_RAW_DATASET || 'olist_raw' }}
           BIGQUERY_MARTS_DATASET=${{ vars.BIGQUERY_MARTS_DATASET || 'olist_marts' }}
-          DBT_DEV_DATASET=${{ vars.DBT_DEV_DATASET || 'dbt_dev' }}
+          DBT_TARGET=${{ vars.DBT_TARGET || 'prod' }}
           KAGGLE_API_TOKEN=${{ secrets.KAGGLE_API_TOKEN }}
           ENV
 

@@ -23,8 +23,8 @@ CONFIG_PATH = Path(__file__).parent / "config.yml"
 
 # Overrides `pipeline.dataset` where set. The environment wins so CI and a
 # per-developer sandbox can retarget the load without editing a committed file
-# (§10). It is the only overridable value; `scripts/run_ingestion.py` names the
-# raw bucket the same way, in `BUCKET_ENV`.
+# (§10). It is the only overridable value; the raw bucket is named the same way
+# in `orchestration/resources.py`, as `RAW_BUCKET_ENV`.
 DATASET_ENV = "BIGQUERY_RAW_DATASET"
 
 _TOP_LEVEL_KEYS = {"kaggle", "pipeline", "schema_contract", "tables"}

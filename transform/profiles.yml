@@ -1,6 +1,7 @@
 # Location is US multi-region everywhere and is immutable after creation (§14).
-# Each engineer builds into their own dataset so concurrent work never collides
-# in the shared olist_marts (§10): `dbt run --target dev_<name>`.
+# `dev` writes to dbt_dev, which dbt creates on first build. Isolation between
+# engineers comes from GCP_PROJECT, not from the dataset name (§10): point it at
+# your own project and nothing you build can collide with anyone else's.
 olist:
   target: dev
   outputs:
@@ -8,7 +9,7 @@ olist:
       type: bigquery
       method: service-account
       project: "{{ env_var('GCP_PROJECT') }}"
-      dataset: "{{ env_var('DBT_DEV_DATASET', 'dbt_dev') }}"
+      dataset: dbt_dev
       keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
       location: US
       threads: 4

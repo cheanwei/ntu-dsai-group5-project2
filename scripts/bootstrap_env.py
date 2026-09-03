@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fill the per-developer values in .env.
+"""Put your Kaggle credential into .env.
 
 Six people each need their own `.env` with the same credentials entered
 correctly (§10, §15). This does that step; it cannot create the credential —
@@ -11,7 +11,6 @@ Kaggle now issues an **API token** string. kagglehub reads it from
 legacy by kagglehub itself. Both paths are supported here.
 
     uv run python scripts/bootstrap_env.py                  # prompts for the token
-    uv run python scripts/bootstrap_env.py --name cheanwei  # also set dbt target
     uv run python scripts/bootstrap_env.py --token-file ~/token.txt
     uv run python scripts/bootstrap_env.py ~/Downloads/kaggle.json   # legacy
 
@@ -54,7 +53,6 @@ PLACEHOLDERS = {
     "your-gcp-project-id",
     "olist-raw-your-gcp-project-id",
     "/absolute/path/to/service-account.json",
-    "dbt_your_name",
     "",
 }
 
@@ -309,7 +307,6 @@ def main() -> int:
     )
     ap.add_argument("kaggle_json", nargs="?", help="path to a legacy kaggle.json")
     ap.add_argument("--token-file", help="file containing the Kaggle API token")
-    ap.add_argument("--name", help="your short name, used for DBT_DEV_DATASET (§10)")
     ap.add_argument("--force", action="store_true", help="overwrite values already set")
     ap.add_argument("--no-prompt", action="store_true", help="never prompt for a token")
     ap.add_argument(
@@ -368,18 +365,11 @@ def main() -> int:
         lines, r = set_var(lines, "KAGGLE_API_TOKEN", token, args.force)
         results.append(("KAGGLE_API_TOKEN", r))
 
-    if args.name:
-        # Per-developer dbt dataset, so concurrent work never collides in the
-        # shared olist_marts (§10).
-        safe = "".join(c if c.isalnum() else "_" for c in args.name.lower())
-        lines, r = set_var(lines, "DBT_DEV_DATASET", f"dbt_{safe}", args.force)
-        results.append(("DBT_DEV_DATASET", r))
-
     if not results:
         fail(
-            "nothing to do — no credential supplied and no --name given.\n"
+            "nothing to do — no credential supplied.\n"
             "\n       In a real terminal this mints one for you automatically:"
-            "\n         uv run python scripts/bootstrap_env.py --name <you>\n"
+            "\n         uv run python scripts/bootstrap_env.py\n"
             "\n       It did not here because stdin is not a TTY, so the OAuth"
             "\n       verification-code step could not run. Options:\n"
             "\n         echo '<token>' | uv run python scripts/bootstrap_env.py"

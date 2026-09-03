@@ -2,3 +2,6 @@ packages:
   # expression_is_true and unique_combination_of_columns, both used in §7.
   - package: dbt-labs/dbt_utils
     version: [">=1.3.0", "<2.0.0"]
+  # Great Expectations-style assertions as dbt tests (§7 tier 2).
+  - package: metaplane/dbt_expectations
+    version: [">=0.10.9", "<0.11.0"]

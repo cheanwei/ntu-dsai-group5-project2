@@ -7,7 +7,7 @@ CSVs, ~120 MB, ~100k orders from September 2016 to October 2018.
 ```
 Kaggle CSVs → GCS raw zone → dlt → BigQuery → dbt (staging → intermediate → marts)
                                        ↓                        ↓
-                              Great Expectations        SQLAlchemy + pandas
+                              dbt + dbt-expectations    SQLAlchemy + pandas
                                                           (Jupyter notebooks)
 
               all of it orchestrated as Dagster software-defined assets
@@ -22,7 +22,6 @@ covers setup and running only.
 | Report | URL |
 |---|---|
 | dbt docs — catalog and lineage | TODO: `https://<org>.github.io/<repo>/dbt/` |
-| Great Expectations Data Docs | TODO: `https://<org>.github.io/<repo>/quality/` |
 | Pipeline runs | GitHub Actions tab |
 
 ## Setup
@@ -33,43 +32,55 @@ with BigQuery enabled, and a Kaggle API token.
 ```bash
 git clone <repo> && cd <repo>
 uv sync                          # add --extra duckdb for the §12 fallback target
-cp .env.example .env             # then fill it in
 uv run nbstripout --install      # EVERY person, EVERY clone — see below
 
-# Mints a Kaggle token (30-day) and writes it plus your personal dbt dataset
-# into .env. Needs a real terminal for the browser approval step:
-uv run python scripts/bootstrap_env.py --name <your-short-name>
-# Already have a token from kaggle.com/settings? Put it in a file and point at it
-# — never on the command line or after `echo`, where it lands in shell history:
-uv run python scripts/bootstrap_env.py --name <your-short-name> --token-file ~/tok.txt
-uv run dbt deps --project-dir transform
+# Creates .env from .env.example, then mints a 30-day Kaggle token into it.
+# Needs a real terminal for the browser approval step:
+uv run python scripts/bootstrap_env.py
 ```
 
-**Everything is US multi-region and that is immutable** (§14). Create the raw
-bucket with `--location=US`; a bucket outside the US fails the load into a US
-dataset with an error that appears to blame the bucket.
+Then fill in `GCP_PROJECT`, `GCP_RAW_BUCKET` and
+`GOOGLE_APPLICATION_CREDENTIALS` in `.env`. dbt packages and its manifest are
+installed on first run, so there is no `dbt deps` step.
+
+### The cloud side, once per project
+
+The bucket, the datasets and the one IAM binding the pipeline needs. Run by
+whoever owns the GCP project, not by every teammate — it needs project-admin
+rights the rest of the team does not have.
 
 ```bash
-gcloud storage buckets create "gs://olist-raw-${GCP_PROJECT}" --location=US
-bq --location=US mk --dataset "${GCP_PROJECT}:olist_raw"
-bq --location=US mk --dataset "${GCP_PROJECT}:olist_marts"
-bq --location=US mk --dataset "${GCP_PROJECT}:${DBT_DEV_DATASET}"
+gcloud auth login                        # NOT `application-default login` — see below
+./scripts/provision_gcp.sh --dry-run     # print every call, change nothing
+./scripts/provision_gcp.sh
 ```
 
-**The service account needs the bucket as well as BigQuery.** A key minted for
-BigQuery has no storage role, and the failure comes late — the Kaggle download
-succeeds, then the first upload returns a 403 naming `storage.objects.create`.
-Grant it on the bucket, not the project, so the account stays scoped to the raw
-zone:
+Fill in `GCP_PROJECT` and `GCP_RAW_BUCKET` in `.env` first — this script reads
+that file itself, so there is nothing to `source`. Idempotent, so re-running
+after a partial failure resumes. Three things it encodes that are easy to get
+wrong by hand:
 
-```bash
-gcloud storage buckets add-iam-policy-binding "gs://olist-raw-${GCP_PROJECT}" \
-  --member="serviceAccount:<sa>@${GCP_PROJECT}.iam.gserviceaccount.com" \
-  --role=roles/storage.objectUser
-```
+- **Everything is US multi-region and that is immutable** (§14). A bucket
+  outside the US fails the load into a US dataset with an error that appears to
+  blame the bucket. Where a resource already exists the script checks its
+  location and stops rather than letting you discover this at load time.
+- **The service account needs the bucket as well as BigQuery.** A key minted
+  for BigQuery has no storage role, and the failure comes late — the Kaggle
+  download succeeds, then the first upload returns a 403 naming
+  `storage.objects.create`. The grant goes on the bucket, not the project, so
+  the account stays scoped to the raw zone, and it is `objectUser` rather than
+  `objectCreator`: the upload needs create, and dlt needs get and list to read
+  those same CSVs back during the load. The account is read from the
+  `client_email` in your `GOOGLE_APPLICATION_CREDENTIALS` key file. Pass
+  `--grant-bigquery` as well if it is newly minted and holds no BigQuery roles.
+- **`gcloud auth login`, not `gcloud auth application-default login`.** ADC is
+  a separate credential file that only client libraries read; `gcloud` and `bq`
+  use their own store, so the ADC command alone leaves both unauthenticated.
+  Nothing in this project uses ADC — the pipeline authenticates with the
+  service-account key, which `google-auth` resolves ahead of it.
 
-`objectUser` and not `objectCreator`: the upload needs create, and dlt needs get
-and list to read those same CSVs back during the load.
+There is no dbt dataset to create: dbt-bigquery makes its own target dataset on
+first build, in the `location` from `transform/profiles.yml`.
 
 **The service-account key never enters git.** `.gitignore` excludes `*.json`
 from the first commit. In CI the key is the `GCP_SA_KEY` secret, written to
@@ -77,89 +88,91 @@ disk by the workflow and deleted in the same job.
 
 ## Running it
 
-**Nothing loads `.env` for you.** No module calls `load_dotenv` yet, and the
-pipeline reads `GCP_RAW_BUCKET`, `GOOGLE_APPLICATION_CREDENTIALS` and
-`KAGGLE_API_TOKEN` from the process environment. Export them first, in the same
-shell:
+One command, from a filled-in `.env` to populated marts:
 
 ```bash
-set -a; source .env; set +a
+uv run python orchestration/run_all.py
 ```
 
-### The full pipeline, end to end
+It materialises the whole asset graph in one process — 32 assets: the Kaggle
+download, the nine CSVs in the raw zone, the nine `olist_raw` tables dlt loads,
+and the 21 dbt models built on those, with every dbt test arriving as an asset
+check on the model it guards. Same entrypoint the deployed Dagster daemon runs
+daily at 08:00 SGT. Budget about five minutes cold, nearly all of it the 126 MB
+Kaggle download; a re-run is much faster.
 
-Two commands from a filled-in `.env` to populated marts:
+**Nothing to `source` first** — the entrypoint reads `.env` itself. A variable
+you export still wins over the file.
 
-```bash
-uv run python orchestration/run_all.py                   # Kaggle → GCS → olist_raw
-uv run dbt build --project-dir transform --target dev    # olist_raw → staging → intermediate → marts
-```
-
-The first materialises the whole Dagster asset graph in one process — the same
-entrypoint GitHub Actions runs daily at 08:00 SGT. Budget roughly five minutes
-cold, nearly all of it the 126 MB Kaggle download; afterwards `data/staging/`
-and the raw-zone prefix are both populated and a re-run is much faster. The
-second builds and tests the 21 dbt models.
-
-**dbt is a separate command because it is not in the asset graph yet**
-(`TODO(A1)` in `orchestration/assets.py`); Great Expectations (`TODO(B1)`) is
-the same story. When both land, `run_all.py` covers the whole thing and the
-second command goes away. Until then the two halves share a warehouse, not a
-run: nothing stops you from building dbt against a raw zone that failed to
-load, so check the first command exited 0.
-
-Confirm what actually landed:
+Confirm what landed:
 
 ```bash
 bq query --use_legacy_sql=false \
   "SELECT COUNT(*) FROM \`${GCP_PROJECT}.olist_raw.olist_orders_dataset\`"
 ```
 
-About 99k orders. If it returns zero rows or the table is missing, the load did
-not reach BigQuery — read the Dagster output rather than re-running blind.
+About 99k orders. Zero rows or a missing table means the load did not reach
+BigQuery — read the Dagster output rather than re-running blind.
 
-To run it the way CI does, without waiting for 08:00: the **pipeline** workflow
-has `workflow_dispatch`, so the Actions tab can trigger it on demand. That path
-also generates dbt docs and publishes the reports to Pages.
-
-The sections below are the same pipeline broken into pieces — use them when
-iterating on one stage rather than running the lot.
-
-### Ingestion — Kaggle → GCS → BigQuery (`olist_raw`)
+### Options
 
 ```bash
-uv run python -m scripts.run_ingestion --dry-run   # what would load, without loading
-uv run python -m scripts.run_ingestion             # download, upload, load
+--dry-run                              # resolve config and selection, run nothing
+--bucket-url gs://<bucket>/2026-08-29  # raw zone already filled: skip the download
+--ingest-date 2026-08-29               # which raw-zone prefix to fill (default: today)
+--bucket <name>                        # override $GCP_RAW_BUCKET
 ```
 
-`--bucket` defaults to `$GCP_RAW_BUCKET`, and `--ingest-date` to today. The date
-is the raw-zone prefix: re-using one overwrites that prefix in place, a new one
-lands beside it, and the load is `replace` either way — so re-running never
-duplicates rows.
+`--bucket-url` is the iteration loop and the recovery path: the download and
+upload are the slow half, so when they have already succeeded, point at the
+prefix and re-run only the load and the models.
 
-Roughly five minutes on a first run, nearly all of it the Kaggle download.
-Afterwards kagglehub serves from its own cache, but the download and upload are
-still the slow half, so while iterating on the load skip them entirely:
+The ingest date *is* the raw-zone prefix. Re-using one overwrites it in place,
+a new one lands beside it, and the load is `replace` either way — so re-running
+never duplicates rows.
+
+### Iterating on one layer
 
 ```bash
-uv run python -m scripts.run_ingestion --bucket-url gs://<bucket>/2026-08-29
+uv run dagster dev -m orchestration.definitions   # UI on :3000, materialise any subset
+cd transform && uv run dbt build                  # models only, against dbt_dev
+uv run dbt docs generate && uv run dbt docs serve
 ```
 
-**What loads, and how, is `ingestion/config.yml`** — the pinned Kaggle version,
-the nine tables, and the columns whose types are declared rather than inferred.
-Read it before changing anything in `ingestion/*.py`; most changes belong in the
-YAML, and `--dry-run` prints exactly what it resolves to.
+`dagster dev` is also the best view of the graph — the lineage screenshot for
+the Technical Overview slide comes from here. Two things to know: it loads
+`.env` *over* your shell rather than under it, so change the file rather than
+exporting; and bare `dbt` commands read `GCP_PROJECT` and
+`GOOGLE_APPLICATION_CREDENTIALS` through `env_var()` with no `.env` support of
+their own, so those need `set -a; source .env; set +a`.
 
-Two failures are expected behaviour rather than bugs: an unexpected column fails
-the load (the frozen schema contract, §4), and a missing source file fails the
+`DBT_TARGET` picks the profiles.yml target. It defaults to `dev`, which writes
+to `dbt_dev`; the scheduled run sets `prod`, whose dataset plus
+`+schema: marts` is the `olist_marts` analysts query.
+
+### What loads, and how
+
+**`ingestion/config.yml`** — the pinned Kaggle version, the nine tables, and the
+columns whose types are declared rather than inferred. Read it before changing
+anything in `ingestion/*.py`; most changes belong in the YAML, and `--dry-run`
+prints exactly what it resolves to.
+
+Two failures are expected behaviour, not bugs: an unexpected column fails the
+load (the frozen schema contract, §4), and a missing source file fails the
 download naming the file (the version pin no longer matching what Kaggle
 serves). Both are meant to stop the run.
 
 ```bash
-uv run pytest                    # 51 tests, no credentials or network needed
+uv run pytest                    # 63 tests, no credentials or network needed
 ```
 
-#### If the load fails with `CERTIFICATE_VERIFY_FAILED`
+The daily schedule is held by the Dagster daemon running in Docker Compose on
+the GCP VM (`orchestration/deploy/`), not by a workflow cron. To run it the way
+CI does without waiting, the **pipeline** workflow is `workflow_dispatch` —
+trigger it from the Actions tab; that path also publishes the dbt docs site to
+Pages.
+
+### If the load fails with `CERTIFICATE_VERIFY_FAILED`
 
 Only on the python.org macOS builds (`/Library/Frameworks/Python.framework/…`),
 and only at the *load* step — the Kaggle download and the GCS upload succeed
@@ -175,48 +188,20 @@ Confirm it in one line:
 uv run python -c "import ssl; print(ssl.get_default_verify_paths().cafile)"   # None → this is it
 ```
 
-Fix the interpreter once. Existing venvs inherit it too — they resolve SSL
-paths through the framework they were built from, so there is nothing to
+Fix the interpreter once; existing venvs inherit it, so there is nothing to
 rebuild:
 
 ```bash
 "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-Quoted, not backslash-escaped: the path has two spaces in it and a stray
-escape sends the shell looking for `/Applications/Python`. Re-run the check
-above to confirm — it should now print a path ending `etc/openssl/cert.pem`.
-
-Then resume without re-downloading — the raw zone is already populated:
-
-```bash
-uv run python -m scripts.run_ingestion --bucket-url gs://<bucket>/<ingest-date>
-```
-
-### Orchestration
-
-The ingestion half of the graph is wired: `kaggle_dataset` → `gcs_raw_files` →
-nine `olist_raw/<table>` assets, one per source table. The dbt models
-(`TODO(A1)`) and the GX asset checks (`TODO(B1)`) join the same graph next.
+Quoted, not backslash-escaped: the path has two spaces in it and a stray escape
+sends the shell looking for `/Applications/Python`. Re-run the check above — it
+should now print a path ending `etc/openssl/cert.pem`. Then resume without
+re-downloading, since the raw zone is already populated:
 
 ```bash
-# Development and demo — webserver + daemon on localhost:3000.
-# The asset graph here is the strongest visual for the Technical Overview slide.
-uv run dagster dev -m orchestration.definitions
-
-# The whole graph, in-process.
-uv run python orchestration/run_all.py
-```
-
-### dbt
-
-Against your personal dataset so concurrent work never collides in the shared
-marts:
-
-```bash
-cd transform
-uv run dbt build --target dev          # run + test, staging → intermediate → marts
-uv run dbt docs generate && uv run dbt docs serve
+uv run python orchestration/run_all.py --bucket-url gs://<bucket>/<ingest-date>
 ```
 
 ## Repository layout
@@ -224,12 +209,13 @@ uv run dbt docs generate && uv run dbt docs serve
 | Path | Contents | Lane |
 |---|---|---|
 | `ingestion/` | Kaggle → GCS → dlt → `olist_raw` (§4) | A1 |
-| `scripts/` | Run by hand: setup, and the manual ingestion entrypoint | A1 |
+| `scripts/` | Run by hand: `.env` bootstrap and one-time GCP provisioning | A1 |
 | `transform/` | dbt project: 9 staging, 4 intermediate, 8 marts (§5) | A2 |
-| `quality/` | Great Expectations suites and Data Docs (§7) | B1 |
-| `orchestration/` | Dagster assets, resources, schedule, CI entrypoint (§8) | A1 |
+| `transform/tests/` | Tier-2 business invariants as dbt tests (§7) | B1 |
+| `orchestration/` | Dagster assets, resources, schedule, and `run_all.py` (§8) | A1 |
 | `orchestration/deploy/` | Compose deployment that runs the graph — stretch, week 3 only (§8) | A1 |
 | `notebooks/` | Four analyses over the marts (§9) | B2 |
+| `dashboards/` | Flask + Streamlit scaffold — stretch, not a deliverable (§11) | B2 |
 | `docs/` | Architecture design and diagrams | C |
 | `.github/workflows/` | Nightly run, artifacts, Pages deploy (§8) | A1 |
 
@@ -243,8 +229,13 @@ These prevent the failures that six people in one repo reliably produce (§10):
   cloned. A teammate who skips this gets no error: git treats an unregistered
   filter as a pass-through and they quietly commit notebooks with outputs
   embedded. One notebook per person, never a shared one.
-- **Per-developer dbt targets** — `dbt run --target dev_<name>` — so nobody
-  builds into someone else's dataset.
+- **Isolation is per project, not per dataset.** There is one `dev` target and
+  it writes to `dbt_dev`, which dbt creates on first build. To keep your work
+  off everyone else's, point `GCP_PROJECT` at your own project and run
+  `scripts/provision_gcp.sh` there. That is the whole pipeline, not just dbt:
+  sources resolve to `$GCP_PROJECT.olist_raw`, so a personal project needs its
+  own raw zone — own bucket, own service-account key, own Kaggle download.
+  Sharing a project means sharing `dbt_dev`, so coordinate before building.
 - **Clean at the earliest layer with enough context, and never twice** (§6).
   dlt does types only; staging does single-table structure; intermediate does
   cross-table logic; marts do shaping; tests verify and never repair;

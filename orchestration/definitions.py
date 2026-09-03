@@ -19,12 +19,13 @@ from __future__ import annotations
 
 from dagster import Definitions
 
-from orchestration.assets import ingestion_assets
+from orchestration.assets import ingestion_assets, transform_assets
 from orchestration.resources import build_resources
 from orchestration.schedules import daily_refresh_schedule
 
-# TODO(A1): + dbt_models. TODO(B1): asset_checks=[gx_validation].
-all_assets = list(ingestion_assets())
+# Quality needs no entry: dbt tests arrive as asset checks on the assets they
+# guard, generated from the manifest by dagster-dbt (§7).
+all_assets = [*ingestion_assets(), *transform_assets()]
 
 defs = Definitions(
     assets=all_assets,

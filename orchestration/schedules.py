@@ -17,9 +17,9 @@ durable, which §8 said it could not be. It lives in SQLite under `DAGSTER_HOME`
 on the VM, and survives redeploys and reboots.
 
 `.github/workflows/pipeline.yml` no longer holds a cron. It is now a
-reports-only workflow, run on demand to publish dbt docs and GX Data Docs to
-Pages. Two schedulers firing `AssetSelection.all()` at the same instant would
-race on the same BigQuery tables.
+reports-only workflow, run on demand to publish the dbt docs site to Pages.
+Two schedulers firing `AssetSelection.all()` at the same instant would race on
+the same BigQuery tables.
 
 Owner: lane A1.
 """

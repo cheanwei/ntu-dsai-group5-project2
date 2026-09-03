@@ -41,7 +41,7 @@ A full materialisation downloads 126 MB from Kaggle, writes nine CSVs to
 `$BIGQUERY_RAW_DATASET`, on your GCP bill. Idempotent (§4), but not a dry run.
 
 The graph is `kaggle_dataset` → `gcs_raw_files` → nine `olist_raw/*` tables.
-**dbt and GX are not in it yet** — `dbt_models()` and `gx_validation()` in
+**dbt is in the graph now** — `dbt_models()` in
 `assets.py` are still `TODO(A1)`/`TODO(B1)`. Both are installed in the image and
 will run here once those are implemented.
 
@@ -99,9 +99,12 @@ expect it to complete. If it does not, the machine type is the dial —
 `MACHINE_TYPE=e2-small ./provision_vm.sh` on a fresh VM, and it stops being
 free.
 
-This does not replace `pipeline.yml`. That workflow still runs the daily
-schedule and still publishes the dbt and GX reports to Pages, which remains the
-durable evidence §8 describes. The VM adds live UI and persistent history.
+This does not replace `pipeline.yml`, but it does take the schedule off it.
+The daemon here holds the daily cron; `pipeline.yml` is `workflow_dispatch`
+only and publishes the dbt docs site to Pages, which remains the durable
+evidence §8 describes. Two schedulers firing `AssetSelection.all()` at the same
+instant would race on the same BigQuery tables (`orchestration/schedules.py`).
+The VM adds live UI and persistent history.
 
 ## Provisioning
 
@@ -358,7 +361,7 @@ A container in `Restarting` with nothing in the log is the OOM signature — see
 | | |
 |---|---|
 | `deploy-dagster.yml` | Builds the image, pushes it, rolls the VM. Runs nothing. Push to `main`, path-filtered. |
-| `pipeline.yml` | Runs the pipeline once and publishes dbt docs + GX Data Docs to Pages. **`workflow_dispatch` only.** |
+| `pipeline.yml` | Runs the pipeline once and publishes the dbt docs site to Pages. **`workflow_dispatch` only.** |
 | `daily_refresh` on the VM | The scheduler. 08:00 SGT, `AssetSelection.all()`, `default_status=RUNNING`. |
 
 **What changed.** §8 gave `pipeline.yml` the scheduler role because nothing else
@@ -402,7 +405,7 @@ Secrets and variables it reads:
 | `GCP_LOCATION` | `US` |
 | `BIGQUERY_RAW_DATASET` | `olist_raw` |
 | `BIGQUERY_MARTS_DATASET` | `olist_marts` |
-| `DBT_DEV_DATASET` | `dbt_dev` |
+| `DBT_TARGET` | `prod` — the profiles.yml target the scheduled run builds into |
 
 ### Three things worth knowing
 

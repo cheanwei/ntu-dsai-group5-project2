@@ -1,4 +1,4 @@
-# Publishes the pipeline's static reports — dbt docs and Great Expectations
+# Publishes the pipeline's static reports — dbt docs and the quality
 # Data Docs — to GitHub Pages.
 #
 # THIS WORKFLOW NO LONGER HOLDS THE SCHEDULER ROLE. §8 gave it one, because at
@@ -47,6 +47,11 @@ jobs:
       GCP_RAW_BUCKET: ${{ secrets.GCP_RAW_BUCKET }}
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       DBT_PROFILES_DIR: ./transform
+      # The nightly run is what fills the marts analysts query (§15). `prod`'s
+      # dataset is `olist`, which dbt_project.yml's `+schema: marts` turns into
+      # `olist_marts`. Leaving it at the `dev` default would publish to dbt_dev
+      # and the shared marts would never refresh.
+      DBT_TARGET: prod
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-sa.json
       # Set so the run reads orchestration/dagster.yaml (telemetry off) and
       # writes SQLite history the later steps can read within the job. It dies
@@ -71,6 +76,7 @@ jobs:
       - name: Install dbt packages
         run: uv run dbt deps --project-dir transform
 
+      # One command: Kaggle -> GCS -> olist_raw -> staging -> intermediate -> marts.
       - name: Materialise the asset graph
         run: uv run python orchestration/run_all.py
 
@@ -80,15 +86,15 @@ jobs:
 
       - name: Generate dbt docs
         if: always()
-        run: uv run dbt docs generate --project-dir transform --target ci
+        run: uv run dbt docs generate --project-dir transform --target prod
 
+      # target/ carries the docs site and run_results.json, which is where a
+      # test result now lives — there is no separate quality site to collect.
       - name: Collect reports
         if: always()
         run: |
-          mkdir -p site/dbt site/quality
+          mkdir -p site/dbt
           cp -r transform/target/* site/dbt/ 2>/dev/null || true
-          cp -r quality/great_expectations/uncommitted/data_docs/local_site/* \
-                site/quality/ 2>/dev/null || true
 
       - name: Upload reports as artifacts
         if: always()
