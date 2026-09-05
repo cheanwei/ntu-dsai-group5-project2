@@ -6,6 +6,12 @@
 .env
 .env.*
 !.env.example
+
+# Staged on the GitHub Actions runner by deploy-dagster.yml: the VM's .env and
+# service-account key, built from Actions secrets at run time. `.env` and
+# `gcp-*.json` above already match these at any depth; this is here so the
+# exclusion is legible rather than incidental.
+.deploy/
 *.pem
 *-key.json
 service-account*.json

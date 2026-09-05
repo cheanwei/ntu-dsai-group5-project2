@@ -8,6 +8,7 @@ Four modules, in the order the data moves through them (§4):
     gcs_to_bigquery.py   run_pipeline -> those resources into olist_raw
 
 Each piece is the size of one Dagster asset, and none of them composes the
-others — `orchestration/assets.py` does that for a run, `scripts/run_ingestion.py`
-for a developer at a terminal.
+others — `orchestration/assets.py` does that, and it is the only place that
+does. A composition here would collapse the lineage graph into one opaque node,
+which is the thing `@dlt_assets` and `@dbt_assets` were chosen to avoid.
 """

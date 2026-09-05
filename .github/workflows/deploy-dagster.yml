@@ -1,0 +1,395 @@
+# Build the Dagster image, push it to Artifact Registry, and roll `dagster-vm`
+# onto it.
+#
+# Companion to provision_vm.sh, which creates the VM and everything around it.
+# That script runs once, by hand; this runs on every change to the code the
+# image carries. The split is deliberate — provisioning grants IAM and creates
+# billable network resources, which is not something a push to main should do.
+#
+# It is also the only thing that puts secrets on the VM. The image carries
+# code and dependencies and nothing else; the .env and the service-account key
+# are written over the SSH tunnel on each deploy, so rotating a credential is
+# a re-run of this workflow rather than a login to the machine.
+#
+# This does not replace pipeline.yml, and pipeline.yml no longer competes with
+# it: the daemon this workflow ships now owns the 08:00 SGT schedule, and
+# pipeline.yml has been reduced to publishing the dbt reports to Pages on
+# demand. Two schedulers firing AssetSelection.all() at the same instant would
+# race on the same nine BigQuery tables.
+#
+# What the VM adds over an ephemeral runner is durable run history and a live
+# UI — the two things §8 ("Reading pipeline reports without a daemon") said
+# could not be had without hosting a database.
+
+name: deploy-dagster
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Deploy even when DEPLOY_DAGSTER is false"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    # Only what actually ends up in the image, plus the deployment files
+    # themselves. A docs or notebook commit rebuilding a ~2 GB image and
+    # restarting the daemon mid-run is pure cost.
+    paths:
+      - "ingestion/**"
+      - "transform/**"
+      - "quality/**"
+      - "orchestration/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/deploy-dagster.yml"
+      # Last match wins in a GitHub path filter, so this exclusion overrides the
+      # globs above. Without it every prose commit under orchestration/ —
+      # deploy/README.md most of all — rebuilds a 2 GB image and restarts the
+      # containers, which costs runner minutes, another retained image in
+      # Artifact Registry, and a minute of UI downtime for a typo fix.
+      #
+      # The Dockerfile does COPY the markdown into the image, so after a
+      # docs-only commit the image is one commit stale in its README. That is
+      # the intended trade: the next real change ships it.
+      - "!**/*.md"
+
+# One deploy at a time. Two concurrent runs would race on the same .env and
+# `compose up`, and cancel-in-progress is wrong here: a cancelled deploy can
+# leave the VM with a new .env pinning an image that was never pushed.
+concurrency:
+  group: deploy-dagster
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Must match provision_vm.sh. These are the deployment's coordinates, not
+  # secrets — the project id is, and comes from `secrets.GCP_PROJECT` below.
+  REGION: us-central1
+  ZONE: us-central1-a
+  VM_NAME: dagster-vm
+  AR_REPO: dagster
+  IMAGE_NAME: olist-dagster
+  APP_DIR: /opt/dagster/app
+
+jobs:
+  # A kill switch for the deploy, as a repository variable rather than a code
+  # change: set DEPLOY_DAGSTER=false to stop pushing new images and restarting
+  # containers, and unset it (or set anything else) to resume.
+  #
+  # Why a whole job rather than an `if:` on `deploy`. A skipped job renders as a
+  # grey tick with the condition hidden behind a hover, so the failure mode is
+  # someone pushing, seeing green, and assuming their change is live. This job
+  # costs a few seconds and writes the decision — and how to undo it — into the
+  # run summary where it will actually be read.
+  #
+  # Read what it does NOT save before relying on it: the VM keeps running, its
+  # external IP keeps billing, and daily_refresh keeps firing on the image
+  # already deployed. See orchestration/deploy/README.md.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      - name: Decide whether to deploy
+        id: decide
+        env:
+          DEPLOY_DAGSTER: ${{ vars.DEPLOY_DAGSTER }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          # Unset must mean "deploy". A variable that has never been created
+          # interpolates to empty, and defaulting that to skip would silently
+          # disable deployment for anyone who forked or re-created the repo.
+          setting="$(printf '%s' "${DEPLOY_DAGSTER}" | tr '[:upper:]' '[:lower:]')"
+          case "${setting}" in
+            false|no|off|0) want=false ;;
+            *)              want=true  ;;
+          esac
+
+          forced=""
+          if [ "${want}" = "false" ] && [ "${FORCE}" = "true" ]; then
+            want=true
+            forced=" — overridden by the \`force\` input"
+          fi
+
+          echo "deploy=${want}" >> "$GITHUB_OUTPUT"
+
+          {
+            if [ "${want}" = "true" ]; then
+              echo "### Deploying${forced}"
+              echo
+              echo "\`DEPLOY_DAGSTER\` = \`${DEPLOY_DAGSTER:-(unset)}\`"
+              echo
+              echo "To pause deployments without touching the code:"
+              echo
+              echo '```'
+              echo "gh variable set DEPLOY_DAGSTER --body false"
+              echo '```'
+            else
+              echo "### Deploy skipped"
+              echo
+              echo "\`DEPLOY_DAGSTER\` is \`${DEPLOY_DAGSTER}\`, so no image was built and the VM was not touched."
+              echo
+              echo "**The VM is still running and still billing.** This switch only stops"
+              echo "*deployments*; it does not stop the external IP charge (~\$3.65/mo) and"
+              echo "does not stop \`daily_refresh\` firing at 08:00 SGT on the image already"
+              echo "deployed. To actually stop spending:"
+              echo
+              echo '```'
+              echo "gcloud compute instances stop dagster-vm --zone us-central1-a"
+              echo '```'
+              echo
+              echo "To resume deployments:"
+              echo
+              echo '```'
+              echo "gh variable set DEPLOY_DAGSTER --body true      # or: gh variable delete DEPLOY_DAGSTER"
+              echo '```'
+              echo
+              echo "Or re-run this workflow with the \`force\` input to deploy once without changing the variable."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: guard
+    if: needs.guard.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Before the ~10-minute image build, not after it. Every one of these
+      # four is required, and an unset secret in GitHub Actions interpolates to
+      # an empty string rather than failing — so the symptom of a missing
+      # secret is a successful build followed by a container that cannot
+      # authenticate, ten minutes later and three steps away from the cause.
+      #
+      # Lengths, never values. A secret's length is not sensitive; its content
+      # is, and Actions' log masking is a safety net, not a reason to echo one.
+      - name: Validate secrets
+        env:
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+          GCP_RAW_BUCKET: ${{ secrets.GCP_RAW_BUCKET }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          fail=0
+          for name in GCP_PROJECT GCP_RAW_BUCKET KAGGLE_API_TOKEN GCP_SA_KEY; do
+            len=${#name}
+            eval "len=\${#${name}}"
+            if [ "${len}" -eq 0 ]; then
+              echo "::error::secret ${name} is unset or empty"
+              fail=1
+            else
+              echo "${name}: ${len} chars"
+            fi
+          done
+          # A key that is present but malformed fails identically to a missing
+          # one at run time, and much later. This repo's own history shows the
+          # shape: `Expecting value: line 2 column 1 (char 1)` is precisely what
+          # json.load reports for a file containing a single newline — i.e. what
+          # `echo '' > key.json` writes when the secret is unset. Caught here,
+          # it is one line of output instead of a failed materialisation.
+          if [ -n "${GCP_SA_KEY}" ]; then
+            printf '%s' "${GCP_SA_KEY}" \
+              | python3 -c "import json,sys; d=json.load(sys.stdin); print('GCP_SA_KEY: valid JSON for', d['client_email'])" 2>/dev/null \
+              || { echo "::error::GCP_SA_KEY is set but is not valid JSON. Set it from the file, not a paste: gh secret set GCP_SA_KEY < key.json"; fail=1; }
+          fi
+          exit "${fail}"
+
+      # Authenticates as the account behind GCP_SA_KEY — the same secret
+      # pipeline.yml uses. provision_vm.sh grants it the five roles this job
+      # needs when given DEPLOY_SA=<that account>: artifactregistry.writer to
+      # push, iap.tunnelResourceAccessor and compute.osAdminLogin to get in,
+      # compute.viewer to resolve the instance, and iam.serviceAccountUser on
+      # the VM's own account (SSHing to an instance with a service account
+      # attached counts as acting as it).
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+
+      - name: Resolve image reference
+        id: image
+        run: |
+          HOST="${REGION}-docker.pkg.dev"
+          REPO="${HOST}/${{ secrets.GCP_PROJECT }}/${AR_REPO}/${IMAGE_NAME}"
+          echo "host=${HOST}"           >> "$GITHUB_OUTPUT"
+          # Tagged with the commit SHA, and that is what .env pins. Compose
+          # decides a container is stale by comparing image *references*, so a
+          # floating :latest would let `up -d` no-op after a pull and the
+          # deploy would report success while the old code kept running.
+          echo "sha=${REPO}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "latest=${REPO}:latest"     >> "$GITHUB_OUTPUT"
+
+      # --- Build and push ---------------------------------------------------
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ steps.image.outputs.host }}" --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # The repo root: the Dockerfile copies ingestion/, transform/,
+          # quality/ and orchestration/, not just the deploy directory.
+          context: .
+          file: orchestration/deploy/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.sha }}
+            ${{ steps.image.outputs.latest }}
+          provenance: false
+          # The `uv sync --frozen` layer is minutes long and changes only when
+          # uv.lock does. mode=max keeps the builder stages too, which is where
+          # that layer lives.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- Deliver configuration -------------------------------------------
+      # Staged through a 0700 directory in the OS Login user's home. scp
+      # creates files with the remote umask (0644), so the mode of the files
+      # themselves is not enough — the directory is what keeps the key
+      # unreadable between arriving and being installed as root:0600.
+
+      - name: Stage configuration for the VM
+        run: |
+          umask 077
+          mkdir -p .deploy
+
+          # Every variable the pipeline reads at run time. DAGSTER_HOME,
+          # GOOGLE_APPLICATION_CREDENTIALS and DBT_PROFILES_DIR are absent on
+          # purpose: docker-compose.vm.yml sets them to in-container paths and
+          # would override anything written here.
+          cat > .deploy/.env <<'ENV'
+          DAGSTER_IMAGE=${{ steps.image.outputs.sha }}
+          GCP_PROJECT=${{ secrets.GCP_PROJECT }}
+          GCP_LOCATION=${{ vars.GCP_LOCATION || 'US' }}
+          GCP_RAW_BUCKET=${{ secrets.GCP_RAW_BUCKET }}
+          BIGQUERY_RAW_DATASET=${{ vars.BIGQUERY_RAW_DATASET || 'olist_raw' }}
+          BIGQUERY_MARTS_DATASET=${{ vars.BIGQUERY_MARTS_DATASET || 'olist_marts' }}
+          DBT_TARGET=${{ vars.DBT_TARGET || 'prod' }}
+          KAGGLE_API_TOKEN=${{ secrets.KAGGLE_API_TOKEN }}
+          ENV
+
+          # transform/profiles.yml uses `method: service-account` with an
+          # explicit keyfile on every target, so dbt needs this on disk even
+          # though the VM has its own attached identity for the image pull.
+          cat > .deploy/gcp-sa.json <<'KEY'
+          ${{ secrets.GCP_SA_KEY }}
+          KEY
+
+          cp orchestration/deploy/docker-compose.vm.yml .deploy/docker-compose.yml
+
+          # The instance config, which the image cannot supply here. The
+          # Dockerfile copies it to $DAGSTER_HOME, but docker-compose.vm.yml
+          # bind-mounts the host's dagster_home straight over that directory
+          # and shadows it — so without this the VM runs on Dagster's built-in
+          # defaults and `telemetry: enabled: false` silently stops applying.
+          cp orchestration/dagster.yaml .deploy/dagster.yaml
+
+          # The secrets themselves were checked in `Validate secrets` above.
+          # What is new here is the image reference, which is composed rather
+          # than supplied: an empty tag reaches the VM as `pull access denied`,
+          # which reads as a registry permissions problem.
+          grep -q '^DAGSTER_IMAGE=.\+:.\+' .deploy/.env \
+            || { echo "::error::DAGSTER_IMAGE is empty or untagged"; exit 1; }
+
+      - name: Copy configuration to the VM
+        run: |
+          SSH=(gcloud compute ssh "${VM_NAME}" --zone "${ZONE}" --tunnel-through-iap --quiet)
+
+          # First contact also generates the runner's throwaway SSH key and
+          # registers it against the service account's OS Login profile.
+          "${SSH[@]}" --command 'install -d -m 700 ~/deploy-staging'
+
+          gcloud compute scp \
+            .deploy/.env .deploy/gcp-sa.json .deploy/docker-compose.yml .deploy/dagster.yaml \
+            "${VM_NAME}:deploy-staging/" \
+            --zone "${ZONE}" --tunnel-through-iap --quiet
+
+          "${SSH[@]}" --command "
+            set -e
+            sudo install -d -m 700 -o root -g root /opt/dagster/secrets
+            sudo install -m 600 -o root -g root ~/deploy-staging/gcp-sa.json /opt/dagster/secrets/gcp-sa.json
+            sudo install -m 600 -o root -g root ~/deploy-staging/.env ${APP_DIR}/.env
+            sudo install -m 644 -o root -g root ~/deploy-staging/docker-compose.yml ${APP_DIR}/docker-compose.yml
+            sudo install -m 644 -o root -g root ~/deploy-staging/dagster.yaml /opt/dagster/dagster_home/dagster.yaml
+            rm -rf ~/deploy-staging
+          "
+
+      # --- Roll the containers ---------------------------------------------
+
+      - name: Pull and restart
+        run: |
+          gcloud compute ssh "${VM_NAME}" --zone "${ZONE}" --tunnel-through-iap --quiet --command "
+            set -e
+            cd ${APP_DIR}
+            # Pulls as the VM's *attached* service account, via the gcloud
+            # docker credential helper the startup script configured for root.
+            # No registry credential is ever stored on this machine.
+            sudo docker compose pull --quiet
+            # --remove-orphans: a service renamed or dropped in the compose
+            # file would otherwise keep running, unmanaged and holding RAM this
+            # box does not have.
+            sudo docker compose up -d --remove-orphans
+            sudo docker compose ps
+          "
+
+      - name: Wait for the webserver
+        run: |
+          # The e2-micro needs a minute or two to import dbt, dlt and pandas in
+          # both containers. Polled from inside the VM: the UI port is only
+          # reachable through an IAP tunnel, and standing one up to curl once
+          # is more moving parts than this is worth.
+          gcloud compute ssh "${VM_NAME}" --zone "${ZONE}" --tunnel-through-iap --quiet --command '
+            for i in $(seq 1 30); do
+              if curl -fsS -o /dev/null http://localhost:3002/server_info; then
+                echo "webserver healthy after $(( i * 10 ))s"; exit 0
+              fi
+              sleep 10
+            done
+            echo "::error::webserver did not become healthy in 300s"
+            cd /opt/dagster/app && sudo docker compose ps && sudo docker compose logs --tail=80
+            exit 1
+          '
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### dagster-vm"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| image | \`${{ steps.image.outputs.sha }}\` |"
+            echo "| instance | \`${VM_NAME}\` (\`${ZONE}\`) |"
+            echo "| result | ${{ job.status }} |"
+            echo
+            echo "Ingress is IAP-only. The VM has a public IP, but it carries egress"
+            echo "to Kaggle, not a reachable UI. Tunnel in:"
+            echo
+            echo '```'
+            echo "gcloud compute start-iap-tunnel ${VM_NAME} 3002 \\"
+            echo "  --local-host-port=127.0.0.1:3002 --zone ${ZONE}"
+            echo '```'
+            echo
+            echo "then open <http://127.0.0.1:3002>."
+            echo
+            echo "Use 127.0.0.1 rather than localhost: on macOS localhost resolves to ::1"
+            echo "first, and the tunnel logs repeated \`[Errno 9] Bad file descriptor\` as"
+            echo "IPv6 connections are torn down. Harmless, but noisy."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Shred staged credentials
+        if: always()
+        run: rm -rf .deploy

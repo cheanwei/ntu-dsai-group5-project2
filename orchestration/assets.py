@@ -4,7 +4,6 @@
       └─ gcs_raw_files      9 CSVs under <ingest_date>/
            └─ dlt assets    9, one per source table -> olist_raw
                 └─ dbt staging (9) -> intermediate (4) -> marts (8)
-                     └─ gx_validation   (asset check)
 
 Design: architecture-design.md §8.
 
@@ -25,6 +24,7 @@ Owner: lane A1.
 # annotations to find the context, config and resource parameters, and PEP 563
 # turns every one of them into a string it will not resolve.
 
+import os
 from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
@@ -38,15 +38,29 @@ from dagster import (
     Output,
     asset,
 )
+from dagster_dbt import (
+    DagsterDbtTranslator,
+    DagsterDbtTranslatorSettings,
+    DbtCliResource,
+    dbt_assets,
+)
 from dagster_dlt import DagsterDltResource, DagsterDltTranslator, dlt_assets
 from dagster_dlt.translator import DltResourceTranslatorData
 
 from ingestion.config import config as ingestion_config
 from ingestion.gcs_to_bigquery import build_pipeline
 from ingestion.olist_source import olist_source
-from orchestration.resources import KaggleDataset, RawZone, Warehouse
+from orchestration.resources import (
+    KaggleDataset,
+    RawZone,
+    Warehouse,
+    prepare_dbt_manifest,
+)
 
 INGESTION_GROUP = "ingestion"
+TRANSFORM_GROUP = "transform"
+
+RAW_ZONE_NAMESPACE = "olist_raw"
 
 RAW_ZONE_ASSET = AssetKey("gcs_raw_files")
 
@@ -57,6 +71,13 @@ RAW_ZONE_ASSET = AssetKey("gcs_raw_files")
 # at all: it picks up the prefix that was actually staged, on whatever date, and
 # not a URI recomputed from today's.
 RAW_ZONE_URI_METADATA = "raw_zone_uri"
+
+# Escape hatch for `run_all.py --bucket-url`: load a prefix that is already in
+# GCS without re-running the 126 MB download. Without it that path needs a
+# persisted DAGSTER_HOME *and* a previous `gcs_raw_files` materialization in
+# that same instance, which is exactly what you do not have after the load
+# failed on a fresh checkout.
+RAW_ZONE_URI_ENV = "OLIST_RAW_ZONE_URI"
 
 # Passed to `@dlt_assets` only so the decorator can enumerate the source's nine
 # resources and shape the graph. It is never opened — see `olist_raw_tables`.
@@ -150,7 +171,7 @@ class OlistDltTranslator(DagsterDltTranslator):
     def get_asset_spec(self, data: DltResourceTranslatorData) -> AssetSpec:
         spec = super().get_asset_spec(data)
         return spec.replace_attributes(
-            key=AssetKey(["olist_raw", data.resource.name]),
+            key=AssetKey([RAW_ZONE_NAMESPACE, data.resource.name]),
             deps=[RAW_ZONE_ASSET],
         )
 
@@ -162,6 +183,11 @@ def raw_zone_uri(context: AssetExecutionContext) -> str:
     make from the UI, so it fails here naming the asset to run rather than
     inside dlt on an empty `bucket_url`.
     """
+    override = os.environ.get(RAW_ZONE_URI_ENV)
+    if override:
+        context.log.info(f"{RAW_ZONE_URI_ENV} is set; loading from {override}")
+        return override
+
     event = context.instance.get_latest_materialization_event(RAW_ZONE_ASSET)
     materialization = event.asset_materialization if event else None
     uri = materialization.metadata.get(RAW_ZONE_URI_METADATA) if materialization else None
@@ -204,29 +230,66 @@ def ingestion_assets() -> Iterable:
     return [kaggle_dataset, gcs_raw_files, olist_raw_tables]
 
 
+def transform_assets() -> Iterable:
+    """The dbt layer: staging -> intermediate -> marts."""
+    return [dbt_models]
+
+
 # --- Layer 3: dbt (§5) -----------------------------------------------------
 
 
-def dbt_models():
-    """21 assets generated from the dbt manifest — 9 staging, 4 intermediate,
-    8 marts.
+class OlistDbtTranslator(DagsterDbtTranslator):
+    """Joins the two halves of the graph at the raw tables.
 
-    TODO(A1): @dbt_assets(manifest=...). Map dbt sources onto the dlt asset
-    keys so the two halves of the graph actually connect rather than sitting
-    side by side. `OlistDltTranslator` above already keys the raw tables as
-    `olist_raw/<identifier>`, which is what a `DagsterDbtTranslator` override
-    for sources has to produce.
+    A dbt *source* keys by default as `<source name>/<table name>` —
+    `olist_raw/customers`. The dlt loader publishes `olist_raw/<table>`, where
+    table is the BigQuery identifier: `olist_raw/olist_customers_dataset`. Two
+    different keys for one table, and the graph would show the dbt models
+    hanging off nine phantom assets nobody materialises.
+
+    `identifier` is the field that reconciles them, because it is the same
+    value the dlt resource is named after — both come from `table:` in
+    ingestion/config.yml. Doing it here rather than as `meta.dagster.asset_key`
+    on all nine tables in _sources.yml means a tenth table joins the graph by
+    being loaded, with nothing to remember.
+
+    Models are left alone: `super()` keys them by name, which is what the dbt
+    docs site and the marts documentation already call them.
     """
-    raise NotImplementedError("TODO(A1)")
+
+    def get_asset_key(self, dbt_resource_props: dict) -> AssetKey:
+        if dbt_resource_props["resource_type"] == "source":
+            return AssetKey([RAW_ZONE_NAMESPACE, dbt_resource_props["identifier"]])
+        return super().get_asset_key(dbt_resource_props)
+
+
+@dbt_assets(
+    manifest=prepare_dbt_manifest(),
+    dagster_dbt_translator=OlistDbtTranslator(
+        settings=DagsterDbtTranslatorSettings(enable_source_tests_as_checks=True),
+    ),
+)
+def dbt_models(context: AssetExecutionContext, dbt: DbtCliResource):
+    """21 assets from the dbt manifest — 9 staging, 4 intermediate, 8 marts.
+
+    `build` rather than `run`: it interleaves each model with the tests that
+    guard it, so a failing test stops its own subtree instead of letting the
+    marts build on top of data that already failed (§6).
+    """
+    yield from dbt.cli(["build"], context=context).stream()
 
 
 # --- Layer 4: quality (§7) -------------------------------------------------
-
-
-def gx_validation():
-    """Run the GX checkpoint against the marts and emit asset checks.
-
-    TODO(B1): @asset_check per suite, so a payment-reconciliation failure lands
-    on fct_orders rather than on a nameless task.
-    """
-    raise NotImplementedError("TODO(B1)")
+#
+# There is no asset to define here. Both tiers are dbt tests, and dagster-dbt
+# has modelled dbt tests as **asset checks** by default since 0.29.20, so a
+# failing payment reconciliation already lands on `fct_orders` rather than on a
+# nameless task — which was the whole requirement (§7).
+#
+# `enable_source_tests_as_checks` extends that to the `data_tests` in
+# _sources.yml, so a broken `olist_raw` table fails a check against the raw
+# asset instead of surfacing three models downstream. `enable_asset_checks` is
+# already True by default and is left alone.
+#
+# What remains is writing the tier-2 assertions (§7), and they go in
+# `transform/` beside the models they guard — not here.

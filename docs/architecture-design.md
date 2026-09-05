@@ -33,7 +33,7 @@ See `docs/diagrams/01-high-level-architecture.excalidraw`.
 ```
 Kaggle CSVs → GCS raw zone → dlt → BigQuery → dbt (staging → intermediate → marts)
                                        ↓                        ↓
-                              Great Expectations        SQLAlchemy + pandas
+                              dbt + dbt-expectations    SQLAlchemy + pandas
                                                           (Jupyter notebooks)
 
               all of it orchestrated as Dagster software-defined assets
@@ -79,7 +79,7 @@ Cost at this volume is roughly one cent per month.
 | Warehouse | **BigQuery** | DuckDB; Supabase/Postgres | Columnar and separates storage from compute, so the scalability story is genuine rather than asserted. Matches the course stack. 120 MB sits well inside the free tier. Postgres is an OLTP engine and would need defending; DuckDB is excellent locally but weakens the cloud-architecture narrative. |
 | Ingestion | **dlt** | Hand-rolled Python; Meltano; BigQuery external tables | ~40 lines rather than ~150, with Google's recommended retry and timeout behaviour already wired. Emits `_dlt_loads` lineage tables for free — direct evidence for the pipeline-integrity criterion. One maintained BigQuery destination, and `bigquery_adapter` available for physical table options if a raw table ever needs them. Meltano's Singer layer adds version-pinning fragility and buys nothing on nine static local files. |
 | Transformation | **dbt Core** | dbt Cloud; raw SQL scripts; Spark; pandas | Dependency resolution, testing, and documentation in one tool. Spark is unjustifiable at 120 MB and would be a red flag, not a strength. pandas transformations do not scale and cannot be tested declaratively. |
-| Quality | **dbt tests + Great Expectations** | Either alone | Two different jobs — see §7. |
+| Quality | **dbt tests + dbt-expectations** | A second assertion framework | Two tiers, one runner — see §7. |
 | Orchestration | **Dagster** | Airflow; cron; GitHub Actions | The pipeline *is* a graph of tables, which is exactly Dagster's asset model. `@dbt_assets` reads the dbt manifest and generates one Dagster asset per dbt model, so there is no second DAG definition to drift out of sync. Airflow would require hand-writing dependencies dbt already knows. Cron gives no lineage and no observability. |
 | Analysis | **SQLAlchemy + pandas** | Direct BigQuery client; Streamlit | Specified by the brief; keeps the warehouse swappable behind a dialect. |
 
@@ -409,7 +409,7 @@ Two tiers, doing two different jobs.
 
 Cheap, schema-level, and they fail the build.
 
-### Tier 2 — Great Expectations (after marts, business invariants)
+### Tier 2 — dbt-expectations (after marts, business invariants)
 
 1. **Payment reconciliation.** Per order, `sum(payment_value)` versus
    `sum(price + freight_value)` within tolerance. Expect ≥99% to pass; investigate
@@ -423,11 +423,30 @@ Cheap, schema-level, and they fail the build.
 5. **Distribution checks.** Mean `review_score` plausible; monthly order volume
    non-zero across the window.
 
-**Why both.** dbt tests are fast and structural — they belong inline in every
-build. GX handles cross-table and statistical assertions dbt expresses awkwardly,
-and it emits **Data Docs**, a browsable HTML quality report. That artifact is
-concrete evidence for the documentation criterion in a way that `dbt test` console
-output is not.
+Tier 2 lives in `transform/`: generic tests beside the column they guard in
+`models/marts/schema.yml`, and singular tests in `tests/` for the assertions
+that span two facts, such as the payment reconciliation.
+
+**Why one tool and not two.** The tiers differ in what they assert, not in what
+runs them. `dbt_expectations` supplies the Great Expectations-style macros —
+distributions, row-count bands, column-pair comparisons — that plain dbt
+expresses awkwardly, so tier 2 needs no second framework, no second datasource
+configuration, and no second place to look when something fails. Both tiers run
+in one `dbt build`, which is already a node in the asset graph, so a tier-2
+failure stops the marts the same way a tier-1 failure does.
+
+It also gets the attribution this section wanted for free: **dagster-dbt models
+every dbt test as an asset check**, so a failing payment reconciliation lands on
+`fct_orders` rather than on a nameless task. That needed hand-written
+`@asset_check` wrappers under the previous design; here it is the default, and
+`enable_source_tests_as_checks` extends it to the raw tables.
+
+**What this gives up.** Great Expectations emits **Data Docs**, a browsable HTML
+quality report, and nothing here replaces that artifact. Test *definitions* are
+published in the dbt docs site; pass/fail shows in the Dagster UI as asset
+checks and in the Actions run. If a standalone HTML quality report is wanted
+later, generate it from `run_results.json` rather than reinstating a second
+assertion framework.
 
 ---
 
@@ -442,7 +461,6 @@ kaggle_dataset          (asset: download at pinned version → GCS)
             └→ dbt staging assets      (9)   ┐
                  └→ dbt intermediate    (4)  │ auto-generated from the
                       └→ dbt marts      (8)  ┘ dbt manifest via @dbt_assets
-                           └→ gx_validation   (asset check)
                                 └→ analytics_extract  (optional, §11)
 ```
 
@@ -493,10 +511,10 @@ Four distinct artifacts are conflated under "reports", and only one needs Dagste
 |---|---|---|
 | Did the pipeline run and pass? | Actions run log and status badge | Yes |
 | What did dbt do — models, timings, tests? | `target/run_results.json`, dbt docs | Only if exported |
-| Did quality checks pass, and what failed? | GX Data Docs HTML | Only if exported |
+| Did quality checks pass, and what failed? | Dagster asset checks; `run_results.json` | Only if exported |
 | Which assets materialised when, historically? | Dagster instance storage | **No** |
 
-**Publish the static reports (required).** GX Data Docs and `dbt docs`
+**Publish the static reports (required).** The `dbt docs` site
 are static HTML. The workflow uploads them as artifacts with `if: always()` — they
 matter most when a run fails — and deploys them to **GitHub Pages**, yielding
 permanent URLs citable from the report and the deck. A published quality report is
@@ -508,7 +526,7 @@ records, `storage/` for compute logs, both gitignored. `orchestration/dagster.ya
 therefore carries no `storage:` block at all — omitting it *is* the choice. That
 costs nothing, provisions nothing, and covers the two places history is actually
 read: `dagster dev` on a laptop during development and the demo, and the console
-in `deploy/` (below).
+in `orchestration/deploy/` (below).
 
 **Shared history was considered and rejected.** Dagster's only alternatives to
 SQLite are Postgres and MySQL, so one instance readable from both CI and every
@@ -578,16 +596,32 @@ a container than in a virtualenv — a cost Lane A2 pays daily through week 2,
 while Lane C, which installs nothing by design (§15), gains nothing.
 
 **What is worth building, in week 3.** A deliberately slim **two-service**
-Compose file — webserver and daemon only — sharing a bind-mounted `DAGSTER_HOME`
-so the UI reads the same local SQLite history `dagster dev` writes. No database
-service, no gRPC code-location container, no `docker.sock`.
+Compose file — webserver and daemon, each loading the code location itself —
+sharing a bind-mounted `DAGSTER_HOME`, so the UI reads the same local SQLite
+history `dagster dev` writes. No database service, no gRPC code-location
+container, no `docker.sock`: two of the reference deployment's five moving
+parts. The cost of dropping the code server is that the daemon both launches
+and hosts every run — Dagster's default run coordinator is the queued one, so
+even a run submitted in the UI is executed by the daemon beside its own copy of
+the code — which makes the daemon a single point of failure and a container
+restart fatal to whatever is running. Acceptable for a laptop deployment, and
+the first thing to revisit if this were ever hosted.
 
-It buys one thing, and the file should not claim more: §8's closing assertion
-that the production path would be Dagster+ or a container on GKE becomes
-something a marker can read — cheap evidence for the architecture criterion. The
-image carries `dagster` and `dagster-webserver` only, not dbt/dlt/pandas, so it
-loads no code location; it is a history console and a topology demonstration,
-not a way to run the pipeline.
+The revision from the *console* originally planned here was made deliberately,
+and it changes what the file buys. An image carrying only `dagster` and
+`dagster-webserver` cannot load a code location, so it could show history but
+never materialise an asset — and `dagster-webserver` will not even start
+without a target unless told the empty workspace is intended. Putting the
+project's own dependencies and code in the image makes it *run* the pipeline
+instead: a run launched from the UI or ticked by the daemon does what
+`dagster dev` and the CI workflow do, with the service-account key bind-mounted
+rather than baked in.
+
+The cost is honest and bounded: the image is ~1.5 GB because it carries dbt,
+dlt, GX and pandas, and a run against it spends real Kaggle bandwidth and real
+BigQuery. §8's closing assertion — that the production path would be Dagster+
+or a container on GKE — stops being an assertion either way; it is now backed by
+a container that has actually run the graph rather than one that only draws it.
 
 Scheduled for week 3 alongside the docs publishing, never week 1, where it would
 compete with the critical path.
@@ -640,31 +674,29 @@ olist-data-platform/
 │   │   └── marts/                     # 8 models + schema.yml                  C1
 │   ├── macros/
 │   ├── seeds/                         # product_category_name_translation
-│   └── tests/                         # singular tests                         B1
-├── quality/                                                                 # B1
-│   └── great_expectations/
-│       └── uncommitted/data_docs/     # generated; gitignored, published to Pages
+│   └── tests/                         # singular tests — tier 2 (§7)           B1
 ├── orchestration/                                                           # A1
 │   ├── definitions.py                 # single source of truth for the graph
-│   ├── assets.py                      # kaggle→gcs, dlt, @dbt_assets, gx check
+│   ├── assets.py                      # kaggle→gcs, dlt, @dbt_assets
 │   ├── resources.py
-│   ├── schedules.py                   # declares intent; GH Actions fires it
+│   ├── schedules.py                   # the daemon on the VM fires it (§8)
 │   ├── dagster.yaml                   # local SQLite instance, no DB (§8)
-│   └── run_all.py                     # materialize() entrypoint for CI
-├── deploy/                            # stretch, week 3 only  (§8)            # A1
-│   ├── docker-compose.yml             # webserver + daemon, bind-mounted home
-│   └── Dockerfile                     # dagster-webserver only
+│   ├── run_all.py                     # the single entrypoint: laptop and CI
+│   └── deploy/                        # stretch, week 3 only  (§8)
+│       ├── docker-compose.yml         # webserver + daemon, bind-mounted home
+│       └── Dockerfile                 # project deps; runs the pipeline
 ├── notebooks/                         # one per person, nbstripout installed    B2
 ├── docs/
 │   ├── architecture-design.md         # this file
 │   └── diagrams/                      # draw.io + Excalidraw, generated
 └── .github/
     └── workflows/
-        └── pipeline.yml               # cron → run_all.py → artifacts → Pages  A1
+        ├── pipeline.yml               # on demand → run_all.py → Pages         A1
+        └── deploy-dagster.yml         # build image → deploy to the VM          A1
 ```
 
 **`.gitignore` must exist in the first commit**, covering `*.json`, `.env`,
-`transform/target/`, and `great_expectations/uncommitted/`. A service-account key
+`transform/target/`, and `transform/dbt_packages/`. A service-account key
 committed to history is laborious to expunge and is precisely the kind of lapse
 the code-quality criterion penalises. All credentials — `GCP_SA_KEY`,
 `GCP_PROJECT`, and `KAGGLE_API_TOKEN` — live in GitHub Actions secrets and in
@@ -712,10 +744,12 @@ Three or four pages maximum.
 Either way, it is framed in the deck as evidence that the marts are consumable
 without SQL.
 
-The second stretch goal is the two-service Compose file in `deploy/` (§8), which
-turns the claim that this would run as a container in production into something
-a marker can read. It depends on nothing else — the Dagster instance it reads is
-local SQLite — and is worth roughly two hours in week 3, or none at all.
+The second stretch goal is the Compose deployment in `orchestration/deploy/`
+(§8), which turns the claim that this would run as a container in production
+into something a marker can read — and, since it carries the project's own
+dependencies, actually run. It depends on nothing else — the Dagster instance
+it reads is local SQLite — and is worth roughly two hours in week 3, or none at
+all.
 
 Persistent *shared* run history is not a stretch goal; it is out of scope, and
 §8 gives the reasoning.

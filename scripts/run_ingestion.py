@@ -1,4 +1,10 @@
-"""Run the ingestion pipeline by hand: Kaggle -> GCS -> BigQuery `olist_raw`.
+"""Ingestion without Dagster: Kaggle -> GCS -> BigQuery `olist_raw`.
+
+**Not the entrypoint.** `orchestration/run_all.py` is what a developer and CI
+both run, and it covers this path plus the dbt models — the same four flags,
+against the asset graph. Reach for this file only when you want the load
+without Dagster in the way: debugging `ingestion/` itself, or a run on a
+machine where the asset graph will not import.
 
     uv run python -m scripts.run_ingestion --dry-run
     uv run python -m scripts.run_ingestion
@@ -8,13 +14,13 @@ Design: architecture-design.md §4, §8.
 
 **Why this is here and not in `ingestion/`.** It composes what §8 models as
 several distinct assets — `kaggle_dataset`, then `gcs_raw_files`, then the nine
-per-table dlt assets — into a single call. That is exactly what a developer
-wants at a terminal and exactly what Dagster must not import: an asset that
-fused those steps would collapse the lineage graph into one opaque node, which
-is the thing `@dlt_assets` and `@dbt_assets` were chosen to avoid.
+per-table dlt assets — into a single call. That is exactly what Dagster must
+not import: an asset that fused those steps would collapse the lineage graph
+into one opaque node, which is the thing `@dlt_assets` and `@dbt_assets` were
+chosen to avoid.
 
-So the composition lives here, where only a human calls it. `ingestion/` keeps
-the pieces, each the size of one asset:
+So the composition lives here. `ingestion/` keeps the pieces, each the size of
+one asset:
 
     ingestion.kaggle_to_gcs.download_dataset      -> kaggle_dataset
     ingestion.kaggle_to_gcs.upload_to_gcs         -> gcs_raw_files
@@ -34,12 +40,22 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 # Running this as a path (`python scripts/run_ingestion.py`) puts scripts/ on
 # sys.path rather than the repo root, so `import ingestion` would fail with what
 # looks like a broken install. The `-m` form above does not need this; the line
 # is here because the other script in this folder is documented as a path and
 # somebody will reasonably copy that habit.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(REPO_ROOT))
+
+# Same contract as orchestration/run_all.py, which carries the full argument:
+# load .env when it is there, never over the top of the environment.
+ENV_FILE = REPO_ROOT / ".env"
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE, override=False)
 
 from ingestion.config import IngestionConfig, config  # noqa: E402
 from ingestion.gcs_to_bigquery import run_pipeline  # noqa: E402
@@ -52,15 +68,16 @@ def resolve_bucket(bucket: str | None) -> str:
     """The raw-zone bucket, from the argument or the environment.
 
     Raises with the variable named rather than letting a `KeyError` surface
-    three frames down, because the usual cause is a shell that never sourced
-    `.env` — nothing in this project loads it implicitly.
+    three frames down. `.env` is already loaded by the time this runs, so
+    reaching here means the variable is missing from the file rather than
+    merely absent from the shell — which is a different fix, and the message
+    says so.
     """
     resolved = bucket or os.environ.get(BUCKET_ENV)
     if not resolved:
         raise RuntimeError(
-            f"{BUCKET_ENV} is not set and no --bucket was given. Fill it in .env "
-            "(see .env.example) and export it into this shell: "
-            "`set -a; source .env; set +a`"
+            f"{BUCKET_ENV} is not set and no --bucket was given. Add it to .env "
+            "(see .env.example), export it into this shell, or pass --bucket."
         )
     return resolved
 

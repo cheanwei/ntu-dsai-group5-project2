@@ -1,0 +1,118 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram name="High-Level Architecture" id="high-level-architecture">
+    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1470" pageHeight="920" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="z1" value="&lt;b&gt;1 · SOURCE&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
+          <mxGeometry x="40" y="170" width="210" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="z2" value="&lt;b&gt;2 · RAW ZONE&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
+          <mxGeometry x="300" y="170" width="210" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="z3" value="&lt;b&gt;3 · INGESTION (EL)&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
+          <mxGeometry x="560" y="170" width="210" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="z4" value="&lt;b&gt;4 · WAREHOUSE — BigQuery&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
+          <mxGeometry x="820" y="110" width="300" height="530" as="geometry"/>
+        </mxCell>
+        <mxCell id="z5" value="&lt;b&gt;5 · CONSUMPTION&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="170" width="260" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="z6" value="&lt;b&gt;6 · DATA QUALITY&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
+          <mxGeometry x="560" y="425" width="210" height="215" as="geometry"/>
+        </mxCell>
+        <mxCell id="title" value="&lt;b&gt;Olist Brazilian E-Commerce  ·  Data Platform Architecture&lt;/b&gt;&lt;br&gt;Kaggle CSVs → GCS raw zone → dlt → BigQuery (ELT via dbt) → analytics" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=14;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="1390" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="kaggle" value="&lt;b&gt;Kaggle&lt;/b&gt;&lt;br&gt;olistbr/&lt;br&gt;brazilian-ecommerce&lt;br&gt;9 CSVs · ~120 MB&lt;br&gt;pinned by version" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#868e96;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="55" y="210" width="180" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="gcs" value="&lt;b&gt;Cloud Storage&lt;/b&gt;&lt;br&gt;gs://olist-raw/&lt;br&gt;ingest_date=YYYY-MM-DD/&lt;br&gt;immutable · replayable" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fff9db;strokeColor=#f08c00;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="315" y="210" width="180" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="dlt" value="&lt;b&gt;dlt pipeline&lt;/b&gt;&lt;br&gt;explicit column hints&lt;br&gt;schema contract: freeze&lt;br&gt;write_disposition:&lt;br&gt;replace (idempotent)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f3f0ff;strokeColor=#6741d9;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="575" y="210" width="180" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="raw" value="&lt;b&gt;olist_raw&lt;/b&gt;&lt;br&gt;1:1 with source · typed&lt;br&gt;+ _dlt_loads lineage" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e7f5ff;strokeColor=#1971c2;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="845" y="165" width="250" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="stg" value="&lt;b&gt;olist_staging  (views)&lt;/b&gt;&lt;br&gt;rename · cast · dedupe&lt;br&gt;one model per source" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e7f5ff;strokeColor=#1971c2;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="845" y="262" width="250" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="int" value="&lt;b&gt;olist_int  (views)&lt;/b&gt;&lt;br&gt;geo dedupe · order lifecycle&lt;br&gt;reusable business logic" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e7f5ff;strokeColor=#1971c2;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="845" y="359" width="250" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="marts" value="&lt;b&gt;olist_marts  (tables)&lt;/b&gt;&lt;br&gt;STAR SCHEMA&lt;br&gt;4 facts + 4 conformed dims&lt;br&gt;partitioned + clustered&lt;br&gt;→ see diagram 02" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ebfbee;strokeColor=#2f9e44;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="845" y="456" width="250" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="dbttests" value="&lt;b&gt;dbt tests — tier 1&lt;/b&gt;&lt;br&gt;unique · not_null&lt;br&gt;relationships&lt;br&gt;accepted_values" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffe3e3;strokeColor=#e03131;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="580" y="462" width="170" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="gx" value="&lt;b&gt;dbt-expectations — tier 2&lt;/b&gt;&lt;br&gt;business invariants&lt;br&gt;inside dbt build" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#ffe3e3;strokeColor=#e03131;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="580" y="555" width="170" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="nb" value="&lt;b&gt;Jupyter + pandas&lt;/b&gt;&lt;br&gt;SQLAlchemy&lt;br&gt;(sqlalchemy-bigquery)&lt;br&gt;sales · products · RFM" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="1195" y="210" width="210" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="dbtdocs" value="&lt;b&gt;dbt docs&lt;/b&gt;&lt;br&gt;lineage graph + catalog" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="1195" y="320" width="210" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="gxdocs" value="&lt;b&gt;Dagster asset checks&lt;/b&gt;&lt;br&gt;pass/fail per asset" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="1195" y="403" width="210" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="dagster" value="&lt;b&gt;ORCHESTRATION — Dagster (software-defined assets)&lt;/b&gt;&lt;br&gt;dlt assets  →  @dbt_assets (one Dagster asset auto-generated per dbt model)  →  dbt tests as asset checks&lt;br&gt;`dagster dev` locally   ·   webserver + daemon in Docker Compose on a GCP e2-micro VM   ·   daemon holds the daily schedule&lt;br&gt;GitHub Actions builds and deploys the image; UI reached over an IAP tunnel (ingress is IAP-only)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fff4e6;strokeColor=#e8590c;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=11;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="40" y="700" width="1390" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Solid = data flow   ·   Dashed = control / validation   ·   Raw zone makes every downstream step replayable&lt;/b&gt;&lt;br&gt;ELT over ETL: warehouse compute is elastic and transformations stay re-runnable without re-ingesting" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="40" y="830" width="1390" height="62" as="geometry"/>
+        </mxCell>
+        <mxCell id="f1" value="kagglehub" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="kaggle" target="gcs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f2" value="read CSV" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="gcs" target="dlt">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f3" value="load job" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dlt" target="raw">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f4" value="dbt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="raw" target="stg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f5" value="dbt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="stg" target="int">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f6" value="dbt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="int" target="marts">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f7" value="SQL" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="marts" target="nb">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="marts" target="dbtdocs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="gx" target="gxdocs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="q1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;dashPattern=6 6;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dbttests" target="stg">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="q2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;dashPattern=6 6;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dbttests" target="marts">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="q3" value="validate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;dashPattern=6 6;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="marts" target="gx">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="o1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;dashPattern=6 6;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dagster" target="kaggle">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="o2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;dashPattern=6 6;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dagster" target="gx">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="o3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;dashPattern=6 6;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="dagster" target="marts">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

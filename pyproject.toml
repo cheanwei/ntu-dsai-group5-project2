@@ -21,9 +21,8 @@ dependencies = [
     # dbt-core>=1.7,<1.12. Raising dbt means raising dagster-dbt first.
     "dbt-core>=1.11,<1.12",
     "dbt-bigquery>=1.11,<1.12",
-    # Quality (§7). The bigquery extra supplies the SQLAlchemy datasource the
-    # marts suites read through.
-    "great-expectations[bigquery]>=1.21",
+    # Quality (§7) needs no Python dependency: the assertions are dbt tests,
+    # from dbt_expectations in transform/packages.yml.
     # Orchestration (§8)
     "dagster>=1.13",
     "dagster-webserver>=1.13",

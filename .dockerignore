@@ -1,0 +1,60 @@
+# Build context is the repo root (orchestration/deploy/docker-compose.yml sets
+# context: ../..), so without this file `docker build` would ship 1 GB of
+# .venv and 120 MB of data/ to the daemon before running a single instruction.
+
+# --- Credentials -----------------------------------------------------------
+# Mirrors .gitignore's rule, and for the same reason: the service-account key
+# is JSON, and a key baked into an image layer survives every later RUN that
+# deletes it. Compose bind-mounts the key at run time instead — it is never
+# copied in. See orchestration/deploy/docker-compose.yml.
+*.json
+!package-lock.json
+.env
+.env.*
+!.env.example
+*.pem
+*-key.json
+service-account*.json
+gcp-*.json
+kaggle.json
+.kaggle/
+
+# --- Environments and caches ----------------------------------------------
+# .venv is the host's, built for darwin-arm64; the image builds its own from
+# uv.lock. Copying it in would shadow nothing and cost a gigabyte.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Generated / local state ----------------------------------------------
+.git/
+data/
+transform/target/
+transform/logs/
+transform/dbt_packages/
+quality/great_expectations/uncommitted/
+notebooks/
+.ipynb_checkpoints/
+
+# --- Dagster instance state ------------------------------------------------
+# DAGSTER_HOME is bind-mounted from the host at run time (§8). Baking a copy of
+# this machine's SQLite history into the image would be shadowed by that mount
+# and misleading without it.
+orchestration/history/
+orchestration/storage/
+orchestration/schedules/
+orchestration/logs/
+orchestration/.logs_queue/
+orchestration/.telemetry/
+orchestration/.nux/
+.tmp_dagster_home_*/
+dagster_home/
+
+# --- Docs and OS ----------------------------------------------------------
+docs/
+.github/
+.DS_Store
