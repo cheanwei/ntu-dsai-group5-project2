@@ -59,6 +59,35 @@ def test_bucket_url_starts_the_run_at_the_loader():
     assert "staging/stg_orders" in keys
 
 
+def test_skip_dbt_stops_at_the_raw_zone():
+    """The stopgap: 11 of the 32 assets — the download, the upload and the nine
+    dlt tables — and none of the 21 models."""
+    selected = selection(parse("--skip-dbt"))
+
+    assert num_assets(selected) == 11
+    keys = {k.to_user_string() for d in selected for k in d.keys}
+    assert "kaggle_dataset" in keys
+    assert "olist_raw/olist_orders_dataset" in keys
+    assert not any(k.startswith(("staging/", "intermediate/", "marts/")) for k in keys)
+
+
+def test_the_two_cuts_compose():
+    """They trim opposite ends and are independent, so together they leave just
+    the load: no download, no upload, no models."""
+    selected = selection(parse("--bucket-url", "gs://b/x", "--skip-dbt"))
+
+    assert num_assets(selected) == 9
+    keys = {k.to_user_string() for d in selected for k in d.keys}
+    assert all(k.startswith("olist_raw/") for k in keys)
+
+
+def test_dry_run_says_dbt_is_skipped(monkeypatch):
+    monkeypatch.setenv("GCP_RAW_BUCKET", "olist-raw-test")
+
+    assert "skipped (--skip-dbt)" in plan(parse("--skip-dbt"))
+    assert "11 of 32" in plan(parse("--skip-dbt"))
+
+
 def test_ingest_date_reaches_the_asset_that_reads_it():
     cfg = run_config(parse("--ingest-date", "2018-10-17"))
 

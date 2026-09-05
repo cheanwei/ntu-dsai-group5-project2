@@ -81,8 +81,9 @@ if ENV_FILE.exists():
 from ingestion.config import config as ingestion_config  # noqa: E402
 from orchestration.assets import (  # noqa: E402
     RAW_ZONE_URI_ENV,
-    dbt_models,
+    ingestion_assets,
     olist_raw_tables,
+    transform_assets,
 )
 from orchestration.definitions import all_assets  # noqa: E402
 from orchestration.resources import (  # noqa: E402
@@ -134,6 +135,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--bucket",
         help=f"Raw-zone bucket. Defaults to ${RAW_BUCKET_ENV}.",
     )
+    parser.add_argument(
+        "--skip-dbt",
+        action="store_true",
+        help="Stop at olist_raw and build no models. For working on ingestion "
+        "while the dbt models are incomplete.",
+    )
     return parser
 
 
@@ -149,7 +156,11 @@ def plan(args: argparse.Namespace) -> str:
         f"raw zone   {target}" + ("   (existing — download skipped)" if args.bucket_url else ""),
         f"dataset    {cfg.dataset} ({cfg.location})",
         f"contract   {cfg.schema_contract}",
-        f"dbt target {os.environ.get(DBT_TARGET_ENV, DEFAULT_DBT_TARGET)}",
+        "dbt target " + (
+            "skipped (--skip-dbt)"
+            if args.skip_dbt
+            else os.environ.get(DBT_TARGET_ENV, DEFAULT_DBT_TARGET)
+        ),
         f"assets     {num_assets(selection(args))} of {num_assets(all_assets)}",
         f"tables     {len(cfg.tables)}",
     ]
@@ -167,12 +178,20 @@ def num_assets(defs: list) -> int:
 def selection(args: argparse.Namespace) -> list:
     """Which assets this run materialises.
 
-    `--bucket-url` says the raw zone is already filled, so the download and the
-    upload are skipped and the run starts at the loader.
+    Two flags cut the graph, at opposite ends and independently. `--bucket-url`
+    says the raw zone is already filled, so the run starts at the loader rather
+    than the download; `--skip-dbt` stops it at `olist_raw`.
+
+    **`--skip-dbt` is a stopgap.** The marts models are `select *` stubs
+    (`TODO(A2)`), so a full run fails in dbt however healthy the load was —
+    which makes the exit code useless as a signal for anyone working on
+    ingestion. Delete the flag once those models are written; it exists to
+    separate "my change broke the load" from "the models are not built yet".
     """
-    if args.bucket_url:
-        return [olist_raw_tables, dbt_models]
-    return all_assets
+    stages = [olist_raw_tables] if args.bucket_url else list(ingestion_assets())
+    if not args.skip_dbt:
+        stages += transform_assets()
+    return stages
 
 
 def run_config(args: argparse.Namespace) -> dict:

@@ -88,18 +88,24 @@ disk by the workflow and deleted in the same job.
 
 ## Running it
 
-One command, from a filled-in `.env` to populated marts:
+One command, from a filled-in `.env` to a loaded raw zone:
 
 ```bash
-uv run python orchestration/run_all.py
+uv run python orchestration/run_all.py --skip-dbt
 ```
 
-It materialises the whole asset graph in one process — 32 assets: the Kaggle
-download, the nine CSVs in the raw zone, the nine `olist_raw` tables dlt loads,
-and the 21 dbt models built on those, with every dbt test arriving as an asset
-check on the model it guards. Same entrypoint the deployed Dagster daemon runs
-daily at 08:00 SGT. Budget about five minutes cold, nearly all of it the 126 MB
-Kaggle download; a re-run is much faster.
+11 assets in one process: the Kaggle download, the nine CSVs in the raw zone,
+and the nine `olist_raw` tables dlt loads. Budget about five minutes cold,
+nearly all of it the 126 MB Kaggle download; a re-run is much faster.
+
+**Drop `--skip-dbt` to build the marts too** — the other 21 assets, with every
+dbt test arriving as an asset check on the model it guards. That is the real
+command and what the deployed daemon runs daily at 08:00 SGT, but **it fails
+today**: the marts models are still `select *` stubs (`TODO(A2)` in
+`transform/models/`), so the run ends `PASS=54 ERROR=6`, every error a stub
+referencing a column that does not exist yet. The flag is here so that failure
+does not look like a broken load. Delete it from this command when those models
+land.
 
 **Nothing to `source` first** — the entrypoint reads `.env` itself. A variable
 you export still wins over the file.
@@ -121,11 +127,18 @@ BigQuery — read the Dagster output rather than re-running blind.
 --bucket-url gs://<bucket>/2026-08-29  # raw zone already filled: skip the download
 --ingest-date 2026-08-29               # which raw-zone prefix to fill (default: today)
 --bucket <name>                        # override $GCP_RAW_BUCKET
+--skip-dbt                             # stop at olist_raw (in the command above)
 ```
 
 `--bucket-url` is the iteration loop and the recovery path: the download and
 upload are the slow half, so when they have already succeeded, point at the
-prefix and re-run only the load and the models.
+prefix and re-run only the load and the models. The two cuts are independent
+and compose — both together materialise the nine `olist_raw` tables and nothing
+else.
+
+**`--skip-dbt` is temporary** — see above. It is in the documented command only
+because the dbt layer is unwritten; it is not a design choice, and the pipeline
+is not finished while it is needed.
 
 The ingest date *is* the raw-zone prefix. Re-using one overwrites it in place,
 a new one lands beside it, and the load is `replace` either way — so re-running
@@ -163,7 +176,7 @@ download naming the file (the version pin no longer matching what Kaggle
 serves). Both are meant to stop the run.
 
 ```bash
-uv run pytest                    # 63 tests, no credentials or network needed
+uv run pytest                    # 66 tests, no credentials or network needed
 ```
 
 The daily schedule is held by the Dagster daemon running in Docker Compose on
@@ -201,7 +214,7 @@ should now print a path ending `etc/openssl/cert.pem`. Then resume without
 re-downloading, since the raw zone is already populated:
 
 ```bash
-uv run python orchestration/run_all.py --bucket-url gs://<bucket>/<ingest-date>
+uv run python orchestration/run_all.py --skip-dbt --bucket-url gs://<bucket>/<ingest-date>
 ```
 
 ## Repository layout
