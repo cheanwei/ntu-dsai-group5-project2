@@ -239,7 +239,9 @@ def transform_assets() -> Iterable:
 
 
 class OlistDbtTranslator(DagsterDbtTranslator):
-    """Joins the two halves of the graph at the raw tables.
+    """Dagster-side naming for the dbt project: asset keys, and asset groups.
+
+    **Keys** join the two halves of the graph at the raw tables.
 
     A dbt *source* keys by default as `<source name>/<table name>` —
     `olist_raw/customers`. The dlt loader publishes `olist_raw/<table>`, where
@@ -255,12 +257,35 @@ class OlistDbtTranslator(DagsterDbtTranslator):
 
     Models are left alone: `super()` keys them by name, which is what the dbt
     docs site and the marts documentation already call them.
+
+    **Groups** are what the UI's left rail lists, and without one every dbt
+    model lands in `default` — 21 assets under a name that says nothing, beside
+    the nine that say `ingestion`. dagster-dbt reads `meta.dagster.group` and
+    then a dbt `group:`, and this project sets neither, so the name is decided
+    here instead of repeated per layer in dbt_project.yml.
     """
 
     def get_asset_key(self, dbt_resource_props: dict) -> AssetKey:
         if dbt_resource_props["resource_type"] == "source":
             return AssetKey([RAW_ZONE_NAMESPACE, dbt_resource_props["identifier"]])
         return super().get_asset_key(dbt_resource_props)
+
+    def get_group_name(self, dbt_resource_props: dict) -> str | None:
+        """One group per dbt layer: staging, intermediate, marts (§5.1).
+
+        `fqn` is `[project, *directories, name]`, so `fqn[1]` is the model's
+        top-level directory under `models/` — already the three layer names,
+        which is why a new model is grouped by where it is filed and there is
+        no list here to keep in step.
+
+        Sources fall through to `super()` deliberately. Their keys are remapped
+        above onto the dlt assets, which carry `group_name=INGESTION_GROUP`
+        already; grouping them here would be a second opinion about assets this
+        class does not own.
+        """
+        if dbt_resource_props["resource_type"] != "model":
+            return super().get_group_name(dbt_resource_props)
+        return dbt_resource_props["fqn"][1]
 
 
 @dbt_assets(
