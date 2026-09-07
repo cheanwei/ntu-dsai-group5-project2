@@ -14,8 +14,13 @@ with source as (
 renamed as (
 
     select
-        -- TODO(A2): explicit column list — rename, cast, trim.
-        *
+        trim(order_id) as order_id,
+        cast(order_item_id as int64) as order_item_id,
+        trim(product_id) as product_id,
+        trim(seller_id) as seller_id,
+        cast(shipping_limit_date as timestamp) as shipping_limit_date,
+        cast(price as numeric) as price,
+        cast(freight_value as numeric) as freight_value
 
     from source
 

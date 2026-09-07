@@ -17,9 +17,11 @@ with payments as (
 final as (
 
     select
-        -- TODO(A2): order_id, payment_sequential, payment_type,
-        -- payment_installments, payment_value.
-        *
+        order_id,
+        payment_sequential,
+        payment_type,
+        payment_installments,
+        payment_value
 
     from payments
 

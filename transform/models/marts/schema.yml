@@ -6,15 +6,14 @@ version: 2
 
 models:
   - name: dim_date
-    description: TODO(C1)
+    description: "{{ doc('dim_date_overview') }}"
     columns:
       - name: date_key
         description: TODO(C1)
         data_tests: [unique, not_null]
 
   - name: dim_customer
-    description: >
-      TODO(C1). Keyed on customer_unique_id, not customer_id — see §5.2.
+    description: "{{ doc('dim_customer_overview') }}"
     columns:
       - name: customer_key
         description: TODO(C1)
@@ -30,7 +29,7 @@ models:
               < (select count(*) from {{ ref('fct_orders') }})
 
   - name: dim_product
-    description: TODO(C1)
+    description: "{{ doc('dim_product_overview') }}"
     columns:
       - name: product_key
         description: TODO(C1)
@@ -42,14 +41,14 @@ models:
         data_tests: [not_null]
 
   - name: dim_seller
-    description: TODO(C1)
+    description: "{{ doc('dim_seller_overview') }}"
     columns:
       - name: seller_key
         description: TODO(C1)
         data_tests: [unique, not_null]
 
   - name: fct_order_items
-    description: TODO(C1)
+    description: "{{ doc('fct_order_items_overview') }}"
     columns:
       - name: order_id
         description: TODO(C1)
@@ -94,7 +93,7 @@ models:
             combination_of_columns: [order_id, order_item_id]
 
   - name: fct_orders
-    description: TODO(C1)
+    description: "{{ doc('fct_orders_overview') }}\n\n{{ doc('star_schema_design') }}"
     columns:
       - name: order_id
         description: TODO(C1)
@@ -116,7 +115,7 @@ models:
                          processing, created, approved]
 
   - name: fct_payments
-    description: TODO(C1)
+    description: "{{ doc('fct_payments_overview') }}"
     columns:
       - name: order_id
         description: TODO(C1)
@@ -138,7 +137,7 @@ models:
             combination_of_columns: [order_id, payment_sequential]
 
   - name: fct_reviews
-    description: TODO(C1)
+    description: "{{ doc('fct_reviews_overview') }}"
     columns:
       - name: review_id
         description: TODO(C1)

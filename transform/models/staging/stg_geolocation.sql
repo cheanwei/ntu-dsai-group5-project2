@@ -14,8 +14,11 @@ with source as (
 renamed as (
 
     select
-        -- TODO(A2): explicit column list — rename, cast, trim.
-        *
+        trim(geolocation_zip_code_prefix) as geolocation_zip_code_prefix,
+        cast(geolocation_lat as numeric) as geolocation_lat,
+        cast(geolocation_lng as numeric) as geolocation_lng,
+        lower(trim(geolocation_city)) as geolocation_city,
+        upper(trim(geolocation_state)) as geolocation_state
 
     from source
 

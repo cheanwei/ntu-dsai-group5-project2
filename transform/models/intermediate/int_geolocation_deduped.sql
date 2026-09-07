@@ -14,12 +14,25 @@ with geolocation as (
 deduped as (
 
     select
-        -- TODO(A2): median lat/lng per prefix; drop coordinates outside
-        -- Brazil's bounding box.
-        *
+        geolocation_zip_code_prefix,
+        percentile_cont(geolocation_lat, 0.5) over (
+            partition by geolocation_zip_code_prefix
+        ) as geolocation_lat,
+        percentile_cont(geolocation_lng, 0.5) over (
+            partition by geolocation_zip_code_prefix
+        ) as geolocation_lng,
+        row_number() over (
+            partition by geolocation_zip_code_prefix
+            order by geolocation_lat, geolocation_lng
+        ) as row_number
 
     from geolocation
+    -- Broad geographic bounds retain Brazil and remove clearly invalid points.
+    where geolocation_lat between -35 and 6
+      and geolocation_lng between -75 and -34
 
 )
 
-select * from deduped
+select * except (row_number)
+from deduped
+where row_number = 1

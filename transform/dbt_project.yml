@@ -5,6 +5,7 @@ config-version: 2
 profile: olist
 
 model-paths: ["models"]
+docs-paths: ["docs"]
 macro-paths: ["macros"]
 seed-paths: ["seeds"]
 test-paths: ["tests"]
