@@ -23,18 +23,28 @@ with items as (
 
 orders as (
 
-    select * from {{ ref('stg_orders') }}
+    select order_id, customer_key, order_purchase_date, order_status
+    from {{ ref('int_order_lifecycle') }}
 
 ),
 
 final as (
 
     select
-        -- TODO(A2): order_id, order_item_id, customer_key, product_key,
-        -- seller_key, order_purchase_date, price, freight_value.
-        *
+        items.order_id,
+        items.order_item_id,
+        orders.customer_key,
+        items.product_id as product_key,
+        items.seller_id as seller_key,
+        orders.order_purchase_date,
+        orders.order_status,
+        date(items.shipping_limit_date) as shipping_limit_date,
+        items.price,
+        items.freight_value,
+        items.price + items.freight_value as line_gross_value
 
     from items
+    inner join orders using (order_id)
 
 )
 

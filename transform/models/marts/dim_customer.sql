@@ -27,11 +27,23 @@ geo as (
 final as (
 
     select
-        -- TODO(A2): customer_key = customer_unique_id, city/state, median
-        -- lat/lng, RFM inputs.
-        *
+        history.customer_unique_id as customer_key,
+        history.customer_city,
+        history.customer_state,
+        history.customer_zip_code_prefix,
+        geo.geolocation_lat as customer_latitude,
+        geo.geolocation_lng as customer_longitude,
+        history.first_order_date,
+        history.last_order_date,
+        history.order_count,
+        history.delivered_order_count,
+        history.is_repeat_customer,
+        history.lifetime_revenue,
+        history.recency_days
 
     from history
+    left join geo
+        on history.customer_zip_code_prefix = geo.geolocation_zip_code_prefix
 
 )
 

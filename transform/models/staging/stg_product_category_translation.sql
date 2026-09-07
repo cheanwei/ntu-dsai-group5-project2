@@ -14,8 +14,8 @@ with source as (
 renamed as (
 
     select
-        -- TODO(A2): explicit column list — rename, cast, trim.
-        *
+        lower(trim(product_category_name)) as product_category_name,
+        lower(trim(product_category_name_english)) as product_category_name_english
 
     from source
 

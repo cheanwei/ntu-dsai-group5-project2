@@ -19,10 +19,16 @@ geo as (
 final as (
 
     select
-        -- TODO(A2): seller_key, city/state, median lat/lng.
-        *
+        sellers.seller_id as seller_key,
+        sellers.seller_city,
+        sellers.seller_state,
+        sellers.seller_zip_code_prefix,
+        geo.geolocation_lat as seller_latitude,
+        geo.geolocation_lng as seller_longitude
 
     from sellers
+    left join geo
+        on sellers.seller_zip_code_prefix = geo.geolocation_zip_code_prefix
 
 )
 
