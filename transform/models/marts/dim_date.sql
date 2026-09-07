@@ -1,4 +1,4 @@
-{{ config(cluster_by = ['date_day']) }}
+{{ config(cluster_by = ['date_key']) }}
 
 -- One row per day, 2016-09-01 -> 2018-12-31 (~852 rows).
 -- Conformed date dimension for all four facts.
