@@ -33,6 +33,7 @@ from dagster import (
     AssetExecutionContext,
     AssetKey,
     AssetSpec,
+    AutomationCondition,
     Config,
     MetadataValue,
     Output,
@@ -286,6 +287,33 @@ class OlistDbtTranslator(DagsterDbtTranslator):
         if dbt_resource_props["resource_type"] != "model":
             return super().get_group_name(dbt_resource_props)
         return dbt_resource_props["fqn"][1]
+
+    def get_automation_condition(self, dbt_resource_props: dict) -> AutomationCondition | None:
+        """Build a model when its inputs actually change, not when the clock says so.
+
+        This is what makes the dbt layer event-driven. `eager()` requests a
+        materialization once an upstream has updated since this model last ran,
+        and — the half that matters here — declines to while any dep is still
+        missing or in flight. The nine raw tables land from a single dlt run, so
+        staging is asked for once on that run's completion rather than nine
+        times, and the marts wait for intermediate rather than racing it.
+
+        The join to ingestion is `get_asset_key` above, not this method. Because
+        dbt sources are keyed onto the dlt assets rather than to phantoms of
+        their own, "an upstream updated" is a real event emitted by a real load,
+        which is the thing a source-keyed-by-default graph cannot express.
+
+        Sources and tests are left to `super()` (None). A source is not
+        something Dagster materialises here — the dlt loader owns those keys and
+        is triggered by `daily_refresh` — and giving them a condition would be
+        this class asking for runs of assets it does not define.
+
+        Nothing evaluates this on its own: conditions are inert without the
+        sensor in orchestration/sensors.py, which the daemon ticks.
+        """
+        if dbt_resource_props["resource_type"] != "model":
+            return super().get_automation_condition(dbt_resource_props)
+        return AutomationCondition.eager()
 
 
 @dbt_assets(

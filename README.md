@@ -179,14 +179,27 @@ download naming the file (the version pin no longer matching what Kaggle
 serves). Both are meant to stop the run.
 
 ```bash
-uv run pytest                    # 71 tests, no credentials or network needed
+uv run pytest                    # 76 tests, no credentials or network needed
 ```
 
-The daily schedule is held by the Dagster daemon running in Docker Compose on
-the GCP VM (`orchestration/deploy/`), not by a workflow cron. To run it the way
-CI does without waiting, the **pipeline** workflow is `workflow_dispatch` —
-trigger it from the Actions tab; that path also publishes the dbt docs site to
-Pages.
+Both triggers are held by the Dagster daemon running in Docker Compose on the
+GCP VM (`orchestration/deploy/`), not by a workflow cron:
+
+| Name | Kind | Fires | Materialises |
+| --- | --- | --- | --- |
+| `daily_refresh` | schedule | 08:00 SGT | Kaggle → GCS → `olist_raw` |
+| `automation_conditions` | sensor | when the load lands | the dbt layer, per model |
+
+The split is deliberate. Nothing external announces a change to the Kaggle
+dump, so ingestion is pulled on a cron; the load finishing *is* an event we
+emit, so dbt is triggered by it rather than by a second cron
+(`AutomationCondition.eager()` in `orchestration/assets.py`). An ingestion
+failure therefore produces no dbt run at all, instead of rebuilding the marts
+on yesterday's raw tables and reporting green.
+
+To run it the way CI does without waiting, the **pipeline** workflow is
+`workflow_dispatch` — trigger it from the Actions tab; that path also publishes
+the dbt docs site to Pages.
 
 ### If the load fails with `CERTIFICATE_VERIFY_FAILED`
 

@@ -114,6 +114,12 @@ services:
   # forever. It also ticks daily_refresh (08:00 SGT) once enabled in the UI —
   # which on this VM finally means something, since unlike `dagster dev` on a
   # laptop the process is still alive at 08:00.
+  #
+  # And it evaluates the automation_conditions sensor, which is what builds the
+  # dbt layer when a load lands (orchestration/sensors.py). Worth knowing before
+  # stopping this service to save memory: that does not merely delay the daily
+  # run, it leaves the marts unbuilt indefinitely, because after the schedule
+  # narrowed to the ingestion group nothing else requests them.
   daemon:
     <<: *dagster
     command: >

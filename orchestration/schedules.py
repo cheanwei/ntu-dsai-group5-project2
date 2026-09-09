@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from dagster import AssetSelection, DefaultScheduleStatus, ScheduleDefinition
 
+from orchestration.assets import INGESTION_GROUP
+
 # Dagster resolves its cron against `execution_timezone`, so this one is local.
 DAILY_CRON = "0 8 * * *"
 TIMEZONE = "Asia/Singapore"
@@ -42,7 +44,7 @@ DAILY_CRON_UTC = "0 0 * * *"
 
 
 def daily_refresh_schedule() -> ScheduleDefinition:
-    """Materialise every asset, daily.
+    """Pull the source into `olist_raw`, daily. The dbt layer follows on its own.
 
     Honest framing for the report (§8): the source is a static dump ending
     October 2018, so a daily run performs no new work. The pipeline is *built*
@@ -51,13 +53,28 @@ def daily_refresh_schedule() -> ScheduleDefinition:
     simplification. Presenting a daily refresh as if it did real work would not
     survive Q&A.
 
-    The selection is `all()` rather than a named list so assets added by the
-    later lanes — the dbt models, the GX checks — are scheduled the moment they
-    are defined, with nothing here to remember to update.
+    **The selection is the ingestion group, not `all()`.** It was `all()`, on
+    the argument that assets added by later lanes would then be scheduled the
+    moment they were defined with nothing here to update. That argument still
+    holds — it just no longer needs a schedule to carry it. The dbt models
+    declare `AutomationCondition.eager()` (orchestration/assets.py) and are
+    pulled by the sensor in orchestration/sensors.py when the raw tables they
+    read are reloaded, which reaches new models the same way and for a better
+    reason: because their inputs changed, rather than because it is 08:00.
+
+    Leaving `all()` here would not merely be redundant, it would race. The cron
+    would materialise the dbt assets directly, the load inside that same run
+    would satisfy their conditions, and the sensor would request a second build
+    of models the first run was still writing.
+
+    The name stays `daily_refresh` although the selection narrowed. Schedule
+    enabled/disabled state is keyed by name in the instance, so renaming would
+    orphan the existing entry on `dagster-vm` and leave two schedules where the
+    UI shows one that has ever run.
     """
     return ScheduleDefinition(
         name="daily_refresh",
-        target=AssetSelection.all(),
+        target=AssetSelection.groups(INGESTION_GROUP),
         cron_schedule=DAILY_CRON,
         execution_timezone=TIMEZONE,
         # RUNNING, not the STOPPED default. The daemon on dagster-vm is the
@@ -71,5 +88,5 @@ def daily_refresh_schedule() -> ScheduleDefinition:
         # was already toggled off, that choice wins and this does not override
         # it: `dagster schedule start daily_refresh`, or the UI.
         default_status=DefaultScheduleStatus.RUNNING,
-        description="Full refresh of the Olist platform, 08:00 SGT.",
+        description="Kaggle -> GCS -> olist_raw, 08:00 SGT. dbt follows on the load.",
     )

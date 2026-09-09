@@ -468,12 +468,12 @@ assertion framework.
 Dagster software-defined assets. One graph, end to end:
 
 ```
-kaggle_dataset          (asset: download at pinned version → GCS)
-  └→ gcs_raw_files      (asset: 9 CSVs under ingest_date=…)
-       └→ dlt assets    (9, one per source table → olist_raw)
-            └→ dbt staging assets      (9)   ┐
-                 └→ dbt intermediate    (4)  │ auto-generated from the
-                      └→ dbt marts      (8)  ┘ dbt manifest via @dbt_assets
+kaggle_dataset          (asset: download at pinned version → GCS)   ┐ daily_refresh
+  └→ gcs_raw_files      (asset: 9 CSVs under ingest_date=…)         │ schedule, cron
+       └→ dlt assets    (9, one per source table → olist_raw)       ┘ 08:00 SGT
+            └→ dbt staging assets      (9)   ┐ @dbt_assets, from the manifest
+                 └→ dbt intermediate    (4)  │ automation_conditions sensor,
+                      └→ dbt marts      (8)  ┘ eager on the load above
                                 └→ analytics_extract  (optional, §11)
 ```
 
@@ -482,67 +482,124 @@ kaggle_dataset          (asset: download at pinned version → GCS)
 - `dagster-dlt`'s `DagsterDltResource` wraps the ingestion pipeline.
 - GX results surface as Dagster **asset checks**, so a quality failure shows up
   against the asset that produced it rather than as an unrelated task failure.
-- Schedule: daily, 08:00 SGT.
+
+**Two triggers, and the boundary between them is the point.** Nothing external
+announces a change to the Kaggle dump, so ingestion is *pulled* on a cron:
+`daily_refresh` materialises the ingestion group — Kaggle → GCS → `olist_raw` —
+at 08:00 SGT. The load finishing, by contrast, **is** an event this system
+emits. So the dbt layer is not scheduled at all. Every model carries
+`AutomationCondition.eager()` (`orchestration/assets.py`), and the
+`automation_conditions` sensor (`orchestration/sensors.py`) requests a build
+when the raw tables it reads have actually been reloaded.
+
+| Name | Kind | Fires | Materialises |
+|---|---|---|---|
+| `daily_refresh` | schedule | 08:00 SGT | `kaggle_dataset` → `gcs_raw_files` → the 9 raw tables |
+| `automation_conditions` | sensor | when that load lands | the 21 dbt models, per model |
+
+Both are held by the daemon on `dagster-vm` (below), and both default to
+`RUNNING` so that a fresh `DAGSTER_HOME` does not silently start with the
+pipeline switched off.
+
+The reason to split them rather than run one cron over `AssetSelection.all()`:
+under a single cron, dbt runs whether or not the load succeeded. An ingestion
+failure at 08:00 would rebuild the marts on yesterday's raw tables and report a
+green dbt run beside a red one. Under a condition, the trigger is the load
+completing, so a failed ingestion produces no dbt run at all and the marts hold
+their last good state. The dependency edge does the work that an `if` in a task
+DAG would otherwise have to.
+
+This is also the honest answer to the objection in §12 that scheduling a static
+dataset is cargo-culting. The cron over a fixed dump genuinely performs no new
+work; the *event-driven* half is the part that would be identical against a
+partner dropping a file or an hourly export, and it is structural rather than
+asserted.
 
 ### Where Dagster runs
 
-**Dagster is not hosted.** The `dagster-daemon` is what makes schedules fire, so
-an unattended schedule requires an always-on process — and that is the entire
-cost of hosting it. GCP's always-free `e2-micro` has 1 GB of RAM, which the
-webserver, daemon, dbt, and dlt will exhaust; anything larger is real money and an
-extra machine to maintain during the final week. Cloud Run is request-scoped and
-would drag in Cloud SQL for run storage. Dagster+ is a commercial product adding
-an account and agent setup for no grading benefit. The brief's §6 is optional and
-names GitHub Actions as acceptable.
+**Dagster is hosted, on one always-free machine.** The `dagster-daemon` is what
+makes a schedule fire and a sensor tick, so both triggers above need a process
+that is alive at 08:00 and still alive when a load finishes. That process is a
+**two-service Docker Compose deployment on a GCP `e2-micro`**
+(`orchestration/deploy/`): webserver and daemon, each loading the code location
+in-process, sharing a bind-mounted `DAGSTER_HOME` backed by SQLite. Roughly
+450–550 MB resident, on a 1 GB machine with 2 GB of swap behind it.
 
-`orchestration/definitions.py` remains the single source of truth, executed two
-ways:
+The fit is bought, not lucky. Dagster's reference Compose deployment is five
+moving parts and 1.5–2.5 GB at peak, which rules out the only free host;
+dropping three of them is what makes an `e2-micro` viable, and the trade is set
+out below. The alternatives were weighed and rejected on the same arithmetic:
+Cloud Run is request-scoped and would drag in Cloud SQL for run storage, and
+Dagster+ is a commercial product adding an account and agent setup for no
+grading benefit.
+
+`orchestration/definitions.py` remains the single source of truth, executed
+three ways:
 
 | Context | Command | Purpose |
 |---|---|---|
 | Development and demo | `dagster dev` | Webserver on `localhost:3000` plus daemon. Materialise assets, inspect lineage, demo live. The asset graph screenshot is the strongest visual available for the Technical Overview slide |
-| Scheduled execution | GitHub Actions cron → `dagster.materialize(...)` in-process | A genuinely running daily schedule, free, with no infrastructure and no daemon |
+| Production | webserver + daemon on `dagster-vm` (`docker-compose.vm.yml`) | Holds both triggers. Run history is durable here, and the UI is reachable over IAP |
+| One-shot, and CI | `run_all.py` | Materialises the graph in-process, ignoring both triggers. The path a developer and the reports workflow take |
 
-The daemon *is* the scheduler; once GitHub Actions holds that role, production
-does not need it. The service-account JSON and Kaggle credentials live in GitHub
-Actions secrets, never in the repository.
+The VM has a public IP and is not reachable on it: the address carries egress to
+`kaggle.com`, while ingress on 22 and 3002 is allowed only from IAP's
+`35.235.240.0/20`. The service-account JSON and Kaggle credentials live in
+GitHub Actions secrets and are delivered to the VM by the deploy workflow —
+never in the repository, never baked into the image.
 
-Report this as the deliberate simplification it is: the production path would be
-Dagster+ or a container on GKE.
+**`.github/workflows/pipeline.yml` holds no cron.** It is a reports-only
+workflow, run on demand to publish the dbt docs site to Pages. Two schedulers
+materialising the same assets at the same instant would race on the same
+BigQuery tables, and a race whose cause is a workflow trigger is one nobody
+would attribute correctly; `tests/test_orchestration_definitions.py` asserts the
+cron stays absent.
 
-### Reading pipeline reports without a daemon
+State the limit that remains rather than waiting for it in Q&A: this is one
+machine, unreplicated, with the daemon both launching and executing every run.
+A container restart kills whatever is materialising. That is acceptable for a
+project deployment and is the first thing to revisit if this were ever run for
+real, where the answer is Dagster+ or a container on GKE.
 
-A GitHub Actions runner is destroyed after each job, and Dagster's own
-documentation is explicit: with `DAGSTER_HOME` unset, the instance uses a
-temporary directory *cleared on process exit*. Run history and materialization
-records therefore do not survive a scheduled run. This must be designed for
-rather than discovered.
+### Run history and published reports
 
-Four distinct artifacts are conflated under "reports", and only one needs Dagster:
+Four distinct artifacts are conflated under "reports", and they do not live in
+the same place or survive the same failures:
 
-| Question | Answer lives in | Survives an ephemeral run |
+| Question | Answer lives in | Durable |
 |---|---|---|
-| Did the pipeline run and pass? | Actions run log and status badge | Yes |
+| Did the pipeline run and pass? | Dagster run log on `dagster-vm`; Actions log for the reports workflow | Yes |
 | What did dbt do — models, timings, tests? | `target/run_results.json`, dbt docs | Only if exported |
 | Did quality checks pass, and what failed? | Dagster asset checks; `run_results.json` | Only if exported |
-| Which assets materialised when, historically? | Dagster instance storage | **No** |
+| Which assets materialised when, historically? | Dagster instance storage on the VM | Yes — SQLite under `DAGSTER_HOME`, across redeploys and reboots |
 
-**Publish the static reports (required).** The `dbt docs` site
-are static HTML. The workflow uploads them as artifacts with `if: always()` — they
+The last row is the one the hosting decision buys. A GitHub Actions runner is
+destroyed after each job, and with `DAGSTER_HOME` unset Dagster uses a temporary
+directory *cleared on process exit* — so under the Actions-as-scheduler topology
+no materialisation record survived the run that wrote it. The VM's bind-mounted
+`DAGSTER_HOME` is the one thing that arrangement could not provide, and the
+sensor needs it: automation conditions are evaluated against materialisation
+history and the sensor's own cursor, both of which live in instance storage. An
+instance cleared on process exit has neither, so there is no "since the last
+load" for a condition to be true of.
+
+**Publish the static reports (required).** The `dbt docs` site is static HTML. The workflow uploads them as artifacts with `if: always()` — they
 matter most when a run fails — and deploys them to **GitHub Pages**, yielding
 permanent URLs citable from the report and the deck. A published quality report is
 materially stronger evidence for the documentation criterion than a screenshot.
 
-**Run history is local, and deliberately stops there.** Set `DAGSTER_HOME` and
-Dagster's default storage takes over: SQLite under `history/` for run and event
-records, `storage/` for compute logs, both gitignored. `orchestration/dagster.yaml`
-therefore carries no `storage:` block at all — omitting it *is* the choice. That
-costs nothing, provisions nothing, and covers the two places history is actually
-read: `dagster dev` on a laptop during development and the demo, and the console
-in `orchestration/deploy/` (below).
+**Run history is durable but not shared, and deliberately stops there.** Set
+`DAGSTER_HOME` and Dagster's default storage takes over: SQLite under
+`history/` for run and event records, `storage/` for compute logs, both
+gitignored. `orchestration/dagster.yaml` therefore carries no `storage:` block
+at all — omitting it *is* the choice. That costs nothing, provisions nothing,
+and covers the two places history is actually read: the VM's UI over IAP, and
+`dagster dev` on a laptop during development and the demo. Those are two
+separate instances with separate histories, which is the trap to know about
+before wondering why a laptop shows no scheduled runs.
 
 **Shared history was considered and rejected.** Dagster's only alternatives to
-SQLite are Postgres and MySQL, so one instance readable from both CI and every
+SQLite are Postgres and MySQL, so one instance readable from the VM and every
 laptop means hosting a database — a free-tier Supabase project was the obvious
 candidate. Against it: a second stateful service to own, credentials to
 distribute to six people, and a free tier that pauses on inactivity so a
@@ -551,29 +608,29 @@ not ask for and that the published reports already cover more durably. §3 rejec
 as the warehouse; re-admitting it to hold instance metadata is not a better
 trade.
 
-**The consequence, stated in the report rather than discovered in Q&A:** run
-history from scheduled runs is ephemeral by design, because the orchestrator is
-not hosted and the runner is destroyed after each job. The durable evidence is
-the published Data Docs and dbt docs. A deliberately chosen and documented
-limitation reads as engineering judgement; the same limitation surfaced by a
-marker's question does not.
+**The consequence, stated in the report rather than discovered in Q&A:**
+scheduled-run history is durable, and it is durable in exactly one place. It is
+not replicated, not backed up, and not readable from a laptop or a CI runner —
+so the evidence cited in the report and the deck is the published dbt docs,
+which have permanent URLs, and the run history is what the demo shows live.
 
 **Stated honestly in the report:** the dataset is a static dump ending October
-2018, so a daily schedule performs no new work. The pipeline is *built* for
+2018, so a daily cron performs no new work. The pipeline is *built* for
 incremental arrival — idempotent replace loads, a date-partitioned raw zone,
-incremental-ready marts — and demonstrating that on a static dataset is a
-deliberate simplification. Presenting a daily refresh as if it did real work
-would not survive Q&A.
+incremental-ready marts, and a transform layer triggered by arrival rather than
+by the clock — and demonstrating that on a static dataset is a deliberate
+simplification. Presenting a daily refresh as if it did real work would not
+survive Q&A; presenting the *mechanism* as the deliverable it is, does.
 
-### Docker Compose considered
+### Why not Dagster's reference Compose deployment
 
 Compose is a packaging format, not a host. It describes how processes are
-assembled; it does not answer where they stay running, which is the entire
-question above. The daemon still needs an always-on machine, and that machine is
-still the whole cost.
+assembled; it does not answer where they stay running, and the always-on machine
+is the whole cost either way — which is why the choice above is a VM rather than
+a `docker-compose.yml`.
 
-It also makes the hosting arithmetic worse rather than better. Dagster's
-reference Compose deployment is four long-lived services — Postgres, a user-code
+Adopting Dagster's *reference* topology on top of that would have made the
+arithmetic worse rather than better. It is four long-lived services — Postgres, a user-code
 gRPC container, the webserver, and the daemon — plus two Dockerfiles, a
 `workspace.yaml`, and `/var/run/docker.sock` mounted into the webserver and
 daemon. With `DAGSTER_CURRENT_IMAGE` set, the run launcher starts a *further*
@@ -592,11 +649,12 @@ adopted to make hosting easier in fact rules out the only free host. A
 comfortable `e2-medium` is about $25–35 per month — real money, and a machine to
 patch during the final week.
 
-**It does not recover shared history either.** Whatever Compose starts is local
-to the machine that ran `docker compose up`, and the GitHub Actions runner
-cannot reach it, so scheduled-run history is no more durable for its existence.
-Compose is orthogonal to that question rather than an answer to it — and the
-question was already settled above, in the negative.
+**It does not make history shared either.** Whatever Compose starts is local to
+the machine that ran `docker compose up`; a Postgres service in the same file is
+reachable from that host and nowhere else. The durability the deployment
+delivers comes from the bind-mounted `DAGSTER_HOME` surviving the container, not
+from the database engine underneath it — which is why the slim version gives up
+Postgres without giving up the row that mattered in the table above.
 
 **The reproducibility case is weaker than it looks.** Containers earn their cost
 where there are system-level dependencies — compilers, geospatial libraries, a
@@ -608,17 +666,22 @@ service-account JSON without leaking it, and a `dbt run` loop that is slower in
 a container than in a virtualenv — a cost Lane A2 pays daily through week 2,
 while Lane C, which installs nothing by design (§15), gains nothing.
 
-**What is worth building, in week 3.** A deliberately slim **two-service**
-Compose file — webserver and daemon, each loading the code location itself —
-sharing a bind-mounted `DAGSTER_HOME`, so the UI reads the same local SQLite
-history `dagster dev` writes. No database service, no gRPC code-location
-container, no `docker.sock`: two of the reference deployment's five moving
-parts. The cost of dropping the code server is that the daemon both launches
-and hosts every run — Dagster's default run coordinator is the queued one, so
-even a run submitted in the UI is executed by the daemon beside its own copy of
-the code — which makes the daemon a single point of failure and a container
-restart fatal to whatever is running. Acceptable for a laptop deployment, and
-the first thing to revisit if this were ever hosted.
+**What was built instead.** A deliberately slim **two-service** Compose file —
+webserver and daemon, each loading the code location itself — sharing a
+bind-mounted `DAGSTER_HOME`, so the UI reads the same SQLite history the daemon
+writes. No database service, no gRPC code-location container, no `docker.sock`:
+two of the reference deployment's five moving parts, and the reason 450–550 MB
+fits where 1.5–2.5 GB does not. The cost of dropping the code server is that the
+daemon both launches and hosts every run — Dagster's default run coordinator is
+the queued one, so even a run submitted in the UI is executed by the daemon
+beside its own copy of the code — which makes the daemon a single point of
+failure and a container restart fatal to whatever is running.
+
+It also concentrates a second responsibility there. The daemon does not merely
+fire the 08:00 cron; it evaluates the `automation_conditions` sensor, which is
+the only thing that builds the dbt layer now that the schedule covers ingestion
+alone. Stopping that service to reclaim memory does not delay the daily run, it
+leaves the marts unbuilt indefinitely while ingestion keeps reporting green.
 
 The revision from the *console* originally planned here was made deliberately,
 and it changes what the file buys. An image carrying only `dagster` and
@@ -636,8 +699,10 @@ BigQuery. §8's closing assertion — that the production path would be Dagster+
 or a container on GKE — stops being an assertion either way; it is now backed by
 a container that has actually run the graph rather than one that only draws it.
 
-Scheduled for week 3 alongside the docs publishing, never week 1, where it would
-compete with the critical path.
+Built in week 3 alongside the docs publishing, never week 1, where it would have
+competed with the critical path. `orchestration/deploy/provision_vm.sh` stands
+the machine up; `.github/workflows/deploy-dagster.yml` builds the image, pushes
+it to Artifact Registry pinned to a commit SHA, and restarts the two services.
 
 ---
 
@@ -692,11 +757,14 @@ olist-data-platform/
 │   ├── definitions.py                 # single source of truth for the graph
 │   ├── assets.py                      # kaggle→gcs, dlt, @dbt_assets
 │   ├── resources.py
-│   ├── schedules.py                   # the daemon on the VM fires it (§8)
+│   ├── schedules.py                   # daily_refresh: cron, ingestion only (§8)
+│   ├── sensors.py                     # automation_conditions: dbt on the load (§8)
 │   ├── dagster.yaml                   # local SQLite instance, no DB (§8)
 │   ├── run_all.py                     # the single entrypoint: laptop and CI
-│   └── deploy/                        # stretch, week 3 only  (§8)
+│   └── deploy/                        # the hosted daemon on dagster-vm (§8)
 │       ├── docker-compose.yml         # webserver + daemon, bind-mounted home
+│       ├── docker-compose.vm.yml      # the hosted variant: pulls a pinned SHA
+│       ├── provision_vm.sh            # the machine, the firewall, IAP ingress
 │       └── Dockerfile                 # project deps; runs the pipeline
 ├── notebooks/                         # one per person, nbstripout installed    B2
 ├── docs/
@@ -757,15 +825,15 @@ Three or four pages maximum.
 Either way, it is framed in the deck as evidence that the marts are consumable
 without SQL.
 
-The second stretch goal is the Compose deployment in `orchestration/deploy/`
-(§8), which turns the claim that this would run as a container in production
-into something a marker can read — and, since it carries the project's own
-dependencies, actually run. It depends on nothing else — the Dagster instance
-it reads is local SQLite — and is worth roughly two hours in week 3, or none at
-all.
+The second stretch goal, the Compose deployment in `orchestration/deploy/`
+(§8), was built. It is no longer a claim that this *would* run as a container in
+production: the daemon on `dagster-vm` holds both triggers, and the marts are
+built by a container that has actually run the graph rather than one that only
+draws it.
 
-Persistent *shared* run history is not a stretch goal; it is out of scope, and
-§8 gives the reasoning.
+Persistent *shared* run history is still not a stretch goal; it is out of scope,
+and §8 gives the reasoning. Durable history and *shared* history are different
+things, and only the first was in reach.
 
 Also out of scope: streaming ingestion, ML models, reverse ETL, and dbt snapshots
 (the source has no change history to capture).
@@ -780,10 +848,11 @@ Also out of scope: streaming ingestion, ML models, reverse ETL, and dbt snapshot
 | Truncated Oct 2018 tail read as a revenue collapse | Credibility loss in Q&A | Annotate or exclude the incomplete period in every time-series chart (§9) |
 | `customer_id` used instead of `customer_unique_id` | Customer analysis becomes meaningless | Enforced in `dim_customer`; a dbt test asserts the dimension's row count is below the order count |
 | Payment fan-out inflates revenue | Wrong headline numbers | Separate fact tables; GX reconciliation test (§7) |
-| Scheduling a static dataset reads as cargo-culting | Architecture criterion | Address it explicitly in the report and the deck (§8) |
+| Scheduling a static dataset reads as cargo-culting | Architecture criterion | Partly designed out rather than argued away: only ingestion is on a cron, and the dbt layer is triggered by the load landing, which is the mechanism a real arrival would use. The remaining cron is addressed explicitly in the report and the deck (§8) |
 | Scope creep into dashboards or streaming | Missed deadline | §11 |
 | Service-account key or Kaggle token committed to git | Credential leak; code-quality penalty | `.gitignore` in the first commit; all secrets in GitHub Actions secrets and local `.env` (§10) |
-| Dagster run history lost because the runner is ephemeral | No observability over scheduled runs | Accepted and documented, not mitigated: the durable evidence is Data Docs and dbt docs published to Pages; local history persists under `DAGSTER_HOME` for development (§8) |
+| Dagster run history confined to one unreplicated VM | Lost observability if the machine is lost | Accepted and documented: history is durable under a bind-mounted `DAGSTER_HOME` and survives redeploys and reboots, but is not backed up or readable off-host. The citable evidence remains the dbt docs published to Pages (§8) |
+| The daemon is stopped to reclaim memory on the `e2-micro` | The dbt layer silently stops building while ingestion still reports green | The daemon evaluates the automation sensor, not just the cron — documented at the service definition in `docker-compose.vm.yml`, and both triggers default to `RUNNING` (§8) |
 | Artifacts not uploaded on a failed run | Cannot debug a failed nightly | `if: always()` on the upload step (§8) |
 | Team collisions in a shared dataset on one main branch | Broken builds | Per-developer dbt targets; `nbstripout` for notebooks (§10) |
 | Non-engineering members idle while waiting on the pipeline | Wasted capacity, weak documentation | Lane C starts day 1 from this document, not from working code (§15) |

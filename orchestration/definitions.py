@@ -22,13 +22,20 @@ from dagster import Definitions
 from orchestration.assets import ingestion_assets, transform_assets
 from orchestration.resources import build_resources
 from orchestration.schedules import daily_refresh_schedule
+from orchestration.sensors import automation_condition_sensor
 
 # Quality needs no entry: dbt tests arrive as asset checks on the assets they
 # guard, generated from the manifest by dagster-dbt (§7).
 all_assets = [*ingestion_assets(), *transform_assets()]
 
+# Two triggers, one graph, and the split is the point (§8). The schedule pulls
+# the source in on a cron because nothing external tells us when Kaggle changes;
+# the sensor builds dbt off the back of the load, because that *is* an event we
+# emit. Registering the sensor is not optional decoration — the automation
+# conditions in assets.py are declarations that nothing evaluates without it.
 defs = Definitions(
     assets=all_assets,
     schedules=[daily_refresh_schedule()],
+    sensors=[automation_condition_sensor()],
     resources=build_resources(),
 )

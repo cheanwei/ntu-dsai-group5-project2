@@ -14,12 +14,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dagster import AssetKey, AssetSelection, DefaultScheduleStatus, Definitions
+from dagster import (
+    AssetKey,
+    AssetSelection,
+    DefaultScheduleStatus,
+    DefaultSensorStatus,
+    Definitions,
+)
 
 from ingestion.config import config
+from orchestration.assets import INGESTION_GROUP
 from orchestration.definitions import defs
 from orchestration.run_all import build_instance
 from orchestration.schedules import DAILY_CRON, DAILY_CRON_UTC, TIMEZONE, daily_refresh_schedule
+from orchestration.sensors import SENSOR_NAME, automation_condition_sensor
 
 WORKFLOW = Path(__file__).parent.parent / ".github" / "workflows" / "pipeline.yml"
 
@@ -88,10 +96,28 @@ def test_the_two_crons_name_the_same_instant():
     assert local.astimezone(UTC).hour == int(DAILY_CRON_UTC.split()[1])
 
 
-def test_the_schedule_covers_every_asset():
+def test_the_schedule_covers_ingestion_and_stops_there():
+    """The cron pulls the source in; the dbt layer is pulled by the sensor when
+    that load lands (sensors.py). Restoring `all()` here would make the cron
+    build dbt directly *and* satisfy the eager conditions, so the sensor would
+    request a second build of models the first run was still writing."""
     job = daily_refresh_schedule().target.resolvable_to_job
 
-    assert job.selection == AssetSelection.all()
+    assert job.selection == AssetSelection.groups(INGESTION_GROUP)
+
+
+def test_the_schedule_selects_the_ingestion_assets_and_no_dbt_model():
+    """Asserting the selection *expression* above says nothing about what it
+    resolves to — a dbt model filed into the ingestion group, or a raw asset
+    moved out of it, would leave that assertion passing and this one failing."""
+    selected = daily_refresh_schedule().target.resolvable_to_job.selection.resolve(
+        defs.resolve_asset_graph()
+    )
+
+    assert AssetKey("kaggle_dataset") in selected
+    assert AssetKey("gcs_raw_files") in selected
+    assert {AssetKey(["olist_raw", table.table]) for table in config().tables} <= selected
+    assert not any(key.path[0] in {"staging", "intermediate", "marts"} for key in selected)
 
 
 def test_no_workflow_competes_with_the_daemon_for_the_schedule():
@@ -112,11 +138,60 @@ def test_no_workflow_competes_with_the_daemon_for_the_schedule():
     )
 
 
-
 def test_the_schedule_runs_without_being_toggled_on():
     """A STOPPED default means the daily run is silently absent on any fresh
     DAGSTER_HOME until someone notices and clicks it on in the UI."""
     assert daily_refresh_schedule().default_status == DefaultScheduleStatus.RUNNING
+
+
+# --- sensors.py ------------------------------------------------------------
+
+
+def test_every_dbt_model_is_triggered_by_its_upstreams():
+    """The dbt layer is event-driven: each model carries an eager condition, so
+    it builds when the raw tables it reads are reloaded rather than on a cron.
+
+    A model reaching the graph without one is the silent failure — it would
+    simply stop being built, with nothing failing to say so."""
+    conditions = {
+        spec.key: spec.automation_condition
+        for spec in defs.resolve_all_asset_specs()
+        if spec.key.path[0] in {"staging", "intermediate", "marts"}
+    }
+
+    assert conditions, "no dbt assets in the graph — the manifest did not load"
+    assert all(
+        condition is not None and condition.get_label() == "eager"
+        for condition in conditions.values()
+    ), sorted(str(key) for key, condition in conditions.items() if condition is None)
+
+
+def test_the_ingestion_assets_are_left_to_the_schedule():
+    """Only one thing may ask for a run of a given asset. The ingestion assets
+    belong to `daily_refresh`; a condition here would have the sensor racing it."""
+    ingestion = [
+        spec
+        for spec in defs.resolve_all_asset_specs()
+        if spec.key.path[0] in {"kaggle_dataset", "gcs_raw_files", "olist_raw"}
+    ]
+
+    assert len(ingestion) == 2 + len(config().tables)
+    assert all(spec.automation_condition is None for spec in ingestion)
+
+
+def test_the_automation_conditions_are_actually_evaluated():
+    """An AutomationCondition is a declaration, not a trigger: without a sensor
+    targeting the asset, nothing evaluates it and the dbt layer never runs."""
+    sensor = next(s for s in defs.sensors if s.name == SENSOR_NAME)
+
+    assert sensor.asset_selection == AssetSelection.all()
+
+
+def test_the_sensor_runs_without_being_toggled_on():
+    """The counterpart to the schedule's RUNNING default, and it bites harder: a
+    stopped schedule is one missing daily run, a stopped automation sensor is a
+    dbt layer that never builds at all, because nothing else triggers it now."""
+    assert automation_condition_sensor().default_status == DefaultSensorStatus.RUNNING
 
 
 # --- run_all.py ------------------------------------------------------------
