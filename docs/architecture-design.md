@@ -122,12 +122,25 @@ A dlt pipeline reading from GCS and loading to the `olist_raw` dataset.
 
 **Non-negotiables:**
 
-- **Explicit column hints, not schema inference.** Two known traps in this dataset:
-  `customer_zip_code_prefix` and `seller_zip_code_prefix` carry leading zeros and
-  must be `STRING` — inferred as `INT64` they are silently corrupted. The
-  `order_*_timestamp` and `*_date` columns need explicit `TIMESTAMP` typing.
+- **A fixed schema, not an inferred one.** All 52 columns across the nine tables
+  are declared in `ingestion/config.yml` with the type they must land as, and
+  both halves of the load derive from that one declaration — the pandas parse
+  and the dlt column hints — so the two cannot drift apart. Three traps motivate
+  this. `customer_zip_code_prefix` and `seller_zip_code_prefix` carry leading
+  zeros and must be `STRING`; inferred as `INT64` they are silently corrupted.
+  The `order_*_timestamp` and `*_date` columns need explicit `TIMESTAMP` typing.
+  And `review_comment_title` is ~88% null, so a slice carrying no comment gives
+  inference nothing to work with and the column is dropped — which makes the raw
+  table's shape depend on which rows happened to arrive. Declaring every column
+  removes the class of problem rather than the known instances.
 - **Schema contract set to `freeze`.** Unexpected columns or type drift fail the
-  load rather than silently reshaping the warehouse.
+  load rather than silently reshaping the warehouse. Because the schema is
+  declared rather than discovered, this holds on the *first* load: there is no
+  run in which dlt is still learning the shape. `tables` stays `evolve` and must
+  — dlt evaluates the contract against the stored schema, so on a fresh dataset
+  all nine tables read as new and `freeze` would block the pipeline from ever
+  creating them. Which tables exist is gated upstream instead, by the source
+  yielding one resource per configured entry and nothing else.
 - **`write_disposition="replace"`.** Re-running the pipeline rebuilds tables
   instead of appending duplicates. Idempotence is a precondition for scheduling.
 - **GCS as staging**, preserving the raw zone described in §2.
@@ -369,7 +382,7 @@ correctly, and never clean the same thing twice.
 
 | Layer | Class of cleaning | Examples | Prohibited here |
 |---|---|---|---|
-| dlt | Type enforcement only | zip prefixes as `STRING`; timestamps parsed; contract `freeze` | Dropping rows, filling nulls, renaming — raw must stay faithful to source |
+| dlt | Type enforcement only | all 52 columns declared, not inferred; contract `freeze` | Dropping rows, filling nulls, renaming — raw must stay faithful to source |
 | staging | Structural, deterministic, single-table | snake_case renames (the source ships `product_name_lenght`); whitespace trim; city-name normalisation; dedupe repeated `review_id` keeping latest `review_answer_timestamp` | Cross-table logic, business rules |
 | intermediate | Cross-table reconciliation and derivation | geolocation dedupe and out-of-Brazil coordinate removal; order lifecycle deltas; payment reconciliation; which `order_status` values count as revenue | Presentation shaping |
 | marts | None — shaping only | Unknown-member handling in dimensions | Any cleaning. Cleaning in a mart means the logic is in the wrong layer and will be duplicated |
@@ -663,7 +676,7 @@ olist-data-platform/
 ├── .env.example                       # documents required vars, no values     A1
 ├── ingestion/                                                               # A1
 │   ├── kaggle_to_gcs.py               # kagglehub → unzip → GCS  (§4)
-│   ├── olist_source.py                # dlt source, explicit column hints
+│   ├── olist_source.py                # dlt source, fixed schema from config.yml
 │   └── gcs_to_bigquery.py             # dlt pipeline → olist_raw
 ├── transform/                         # dbt project                          # A2
 │   ├── dbt_project.yml

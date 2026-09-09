@@ -40,7 +40,7 @@ def high_level_architecture() -> Diagram:
         Box("gcs", 315, 210, 180, 100,
             "Cloud Storage\ngs://olist-raw/\ningest_date=YYYY-MM-DD/\nimmutable · replayable", "storage", font=10),
         Box("dlt", 575, 210, 180, 100,
-            "dlt pipeline\nexplicit column hints\nschema contract: freeze\nwrite_disposition:\nreplace (idempotent)", "move", font=10),
+            "dlt pipeline\nfixed schema (52 cols)\nschema contract: freeze\nwrite_disposition:\nreplace (idempotent)", "move", font=10),
 
         Box("raw", 845, 165, 250, 72,
             "olist_raw\n1:1 with source · typed\n+ _dlt_loads lineage", "wh", font=10),

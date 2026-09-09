@@ -69,18 +69,42 @@ def test_zip_prefix_loads_as_text_keeping_its_leading_zero(bucket_url, load_to_t
     assert {r["customer_zip_code_prefix"] for r in rows} == {"01234", "14409"}
 
 
-def test_every_declared_timestamp_column_loads_as_timestamp(bucket_url, load_to_tmp):
+def test_every_declared_column_loads_with_its_declared_type(bucket_url, load_to_tmp):
+    """The whole fixed schema, asserted against what dlt actually built. Every
+    one of the 52 declared columns, not just the awkward ones — inference gets
+    no say in any of them."""
     pipeline = load_to_tmp(bucket_url)
 
     wrong = {}
+    checked = 0
     for table in config().tables:
         schema = pipeline.default_schema.get_table_columns(table.table)
-        for col in table.timestamp_columns:
-            if schema[col]["data_type"] != "timestamp":
+        for col, data_type in table.columns.items():
+            checked += 1
+            if col not in schema:
+                wrong[f"{table.table}.{col}"] = "missing"
+            elif schema[col]["data_type"] != data_type:
                 wrong[f"{table.table}.{col}"] = schema[col]["data_type"]
 
     assert wrong == {}
-    assert any(t.timestamp_columns for t in config().tables), "nothing was checked"
+    assert checked == 52, f"expected 52 declared columns, checked {checked}"
+
+
+def test_no_column_arrives_that_was_not_declared(bucket_url, load_to_tmp):
+    """The other half of "fixed": nothing inferred sneaks in either. dlt's own
+    `_dlt_*` bookkeeping columns are the only additions allowed."""
+    pipeline = load_to_tmp(bucket_url)
+
+    extra = {}
+    for table in config().tables:
+        schema = pipeline.default_schema.get_table_columns(table.table)
+        undeclared = {
+            col for col in schema if col not in table.columns and not col.startswith("_dlt_")
+        }
+        if undeclared:
+            extra[table.table] = sorted(undeclared)
+
+    assert extra == {}
 
 
 def test_all_null_timestamp_column_is_still_typed_and_materialized(tmp_path, load_to_tmp):
@@ -109,16 +133,17 @@ def test_all_null_timestamp_column_is_still_typed_and_materialized(tmp_path, loa
     assert columns["order_delivered_customer_date"]["data_type"] == "timestamp"
 
 
-def test_unexpected_column_fails_the_load(raw_csvs, load_to_tmp):
-    """§4's schema contract. A tenth column must fail the load rather than
-    quietly widen the warehouse table.
+def test_unexpected_column_fails_the_very_first_load(raw_csvs, load_to_tmp):
+    """§4's schema contract, and the reason the schema is declared rather than
+    inferred. A tenth column must fail the load rather than quietly widen the
+    warehouse table.
 
-    Two loads, because that is what the contract actually governs: the first
-    establishes the schema, the second is the one that violates it. Demoing
-    this live means loading twice too.
+    One load, not two. Under inference the first load is what *establishes* the
+    schema, so a rogue column can only be caught on the run after the one that
+    introduced it — the contract has nothing to compare against yet. Declaring
+    every column moves the comparison to the first row of the first run, which
+    is also what makes this demonstrable live in a single pass.
     """
-    load_to_tmp(raw_csvs.as_uri())
-
     customers = raw_csvs / "olist_customers_dataset.csv"
     header, *rows = customers.read_text().strip().splitlines()
     customers.write_text(
@@ -129,3 +154,14 @@ def test_unexpected_column_fails_the_load(raw_csvs, load_to_tmp):
         load_to_tmp(raw_csvs.as_uri())
 
     assert "loyalty_tier" in str(excinfo.value)
+
+
+def test_a_type_change_in_source_fails_the_load(raw_csvs, load_to_tmp):
+    """`data_type: freeze`, asserted on a value rather than a column. A price
+    that arrives as text must fail, not land as a string in a DOUBLE column's
+    place — the frozen declaration is what gives dlt something to reject."""
+    items = raw_csvs / "olist_order_items_dataset.csv"
+    items.write_text(items.read_text().replace("58.90", "fifty-eight"))
+
+    with pytest.raises(PipelineStepFailed):
+        load_to_tmp(raw_csvs.as_uri())

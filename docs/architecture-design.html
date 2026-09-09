@@ -342,8 +342,8 @@ html{scroll-behavior:smooth}
 
     <p class="label-lead">Non-negotiables</p>
     <ul>
-      <li><strong>Explicit column hints, not schema inference.</strong> Two known traps in this dataset: <code>customer_zip_code_prefix</code> and <code>seller_zip_code_prefix</code> carry leading zeros and must be <code>STRING</code> — inferred as <code>INT64</code> they are silently corrupted. The <code>order_*_timestamp</code> and <code>*_date</code> columns need explicit <code>TIMESTAMP</code> typing.</li>
-      <li><strong>Schema contract set to <code>freeze</code>.</strong> Unexpected columns or type drift fail the load rather than silently reshaping the warehouse.</li>
+      <li><strong>A fixed schema, not an inferred one.</strong> All 52 columns across the nine tables are declared in <code>ingestion/config.yml</code> with the type they must land as, and both halves of the load derive from that one declaration — the pandas parse and the dlt column hints — so the two cannot drift apart. Three traps motivate this. <code>customer_zip_code_prefix</code> and <code>seller_zip_code_prefix</code> carry leading zeros and must be <code>STRING</code>; inferred as <code>INT64</code> they are silently corrupted. The <code>order_*_timestamp</code> and <code>*_date</code> columns need explicit <code>TIMESTAMP</code> typing. And <code>review_comment_title</code> is ~88% null, so a slice carrying no comment gives inference nothing to work with and the column is dropped — which makes the raw table's shape depend on which rows happened to arrive. Declaring every column removes the class of problem rather than the known instances.</li>
+      <li><strong>Schema contract set to <code>freeze</code>.</strong> Unexpected columns or type drift fail the load rather than silently reshaping the warehouse. Because the schema is declared rather than discovered, this holds on the <em>first</em> load: there is no run in which dlt is still learning the shape. <code>tables</code> stays <code>evolve</code> and must — dlt evaluates the contract against the stored schema, so on a fresh dataset all nine tables read as new and <code>freeze</code> would block the pipeline from ever creating them. Which tables exist is gated upstream instead, by the source yielding one resource per configured entry and nothing else.</li>
       <li><strong><code>write_disposition="replace"</code>.</strong> Re-running the pipeline rebuilds tables instead of appending duplicates. Idempotence is a precondition for scheduling.</li>
       <li><strong>GCS as staging</strong>, preserving the raw zone described in §2.</li>
       <li><strong>The physical design is declared in the dbt models, not at ingest.</strong> §5.3's partition and cluster hints are all marts, and each mart model carries its own <code>{{ config(partition_by=..., cluster_by=...) }}</code>. dlt's <code>bigquery_adapter</code> can only configure the tables dlt itself creates — the raw ones — where partitioning ~100k rows that a staging view full-scans once per run buys nothing measurable.</li>
@@ -518,7 +518,7 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
       <table>
         <thead><tr><th>Layer</th><th>Class of cleaning</th><th>Examples</th><th>Prohibited here</th></tr></thead>
         <tbody>
-          <tr><td>dlt</td><td>Type enforcement only</td><td>zip prefixes as <code>STRING</code>; timestamps parsed; contract <code>freeze</code></td><td class="no">Dropping rows, filling nulls, renaming — raw must stay faithful to source</td></tr>
+          <tr><td>dlt</td><td>Type enforcement only</td><td>all 52 columns declared, not inferred; contract <code>freeze</code></td><td class="no">Dropping rows, filling nulls, renaming — raw must stay faithful to source</td></tr>
           <tr><td>staging</td><td>Structural, deterministic, single-table</td><td>snake_case renames (the source ships <code>product_name_lenght</code>); whitespace trim; city-name normalisation; dedupe repeated <code>review_id</code> keeping latest <code>review_answer_timestamp</code></td><td class="no">Cross-table logic, business rules</td></tr>
           <tr><td>intermediate</td><td>Cross-table reconciliation and derivation</td><td>geolocation dedupe and out-of-Brazil coordinate removal; order lifecycle deltas; payment reconciliation; which <code>order_status</code> values count as revenue</td><td class="no">Presentation shaping</td></tr>
           <tr><td>marts</td><td>None — shaping only</td><td>Unknown-member handling in dimensions</td><td class="no">Any cleaning. Cleaning in a mart means the logic is in the wrong layer and will be duplicated</td></tr>
@@ -703,7 +703,7 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
 ├── .env.example                       # documents required vars, no values     A1
 ├── ingestion/                                                               # A1
 │   ├── kaggle_to_gcs.py               # kagglehub → unzip → GCS  (§4)
-│   ├── olist_source.py                # dlt source, explicit column hints
+│   ├── olist_source.py                # dlt source, fixed schema from config.yml
 │   └── pipeline.py                    # dlt pipeline → olist_raw
 ├── transform/                         # dbt project                          # A2
 │   ├── dbt_project.yml

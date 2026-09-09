@@ -31,7 +31,7 @@
         <mxCell id="gcs" value="&lt;b&gt;Cloud Storage&lt;/b&gt;&lt;br&gt;gs://olist-raw/&lt;br&gt;ingest_date=YYYY-MM-DD/&lt;br&gt;immutable · replayable" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fff9db;strokeColor=#f08c00;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
           <mxGeometry x="315" y="210" width="180" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="dlt" value="&lt;b&gt;dlt pipeline&lt;/b&gt;&lt;br&gt;explicit column hints&lt;br&gt;schema contract: freeze&lt;br&gt;write_disposition:&lt;br&gt;replace (idempotent)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f3f0ff;strokeColor=#6741d9;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+        <mxCell id="dlt" value="&lt;b&gt;dlt pipeline&lt;/b&gt;&lt;br&gt;fixed schema (52 cols)&lt;br&gt;schema contract: freeze&lt;br&gt;write_disposition:&lt;br&gt;replace (idempotent)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f3f0ff;strokeColor=#6741d9;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
           <mxGeometry x="575" y="210" width="180" height="100" as="geometry"/>
         </mxCell>
         <mxCell id="raw" value="&lt;b&gt;olist_raw&lt;/b&gt;&lt;br&gt;1:1 with source · typed&lt;br&gt;+ _dlt_loads lineage" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e7f5ff;strokeColor=#1971c2;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">

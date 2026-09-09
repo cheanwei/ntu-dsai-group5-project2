@@ -165,18 +165,21 @@ to `dbt_dev`; the scheduled run sets `prod`, whose dataset plus
 
 ### What loads, and how
 
-**`ingestion/config.yml`** — the pinned Kaggle version, the nine tables, and the
-columns whose types are declared rather than inferred. Read it before changing
-anything in `ingestion/*.py`; most changes belong in the YAML, and `--dry-run`
-prints exactly what it resolves to.
+**`ingestion/config.yml`** — the pinned Kaggle version, the nine tables, and
+every one of their 52 columns with the type it must land as. The schema is
+fixed, not inferred: `columns:` is exhaustive, so a column present in the CSV
+but missing from the YAML is a *new* column at load time and the frozen
+contract rejects it. Read it before changing anything in `ingestion/*.py`; most
+changes belong in the YAML, and `--dry-run` prints exactly what it resolves to.
 
 Two failures are expected behaviour, not bugs: an unexpected column fails the
-load (the frozen schema contract, §4), and a missing source file fails the
+load (the frozen schema contract, §4 — on the first run, not the second, since
+the schema is declared rather than learned), and a missing source file fails the
 download naming the file (the version pin no longer matching what Kaggle
 serves). Both are meant to stop the run.
 
 ```bash
-uv run pytest                    # 66 tests, no credentials or network needed
+uv run pytest                    # 71 tests, no credentials or network needed
 ```
 
 The daily schedule is held by the Dagster daemon running in Docker Compose on

@@ -1,8 +1,13 @@
 # Ingestion configuration (architecture-design.md §4).
 #
 # One entry per source table, carrying everything true about it: the CSV it
-# comes from, the BigQuery table it lands in, and the columns whose types must
-# be declared rather than inferred.
+# comes from, the BigQuery table it lands in, and every one of its columns with
+# the type it must land as.
+#
+# The schema is fixed, not inferred. `columns:` is exhaustive — a column in the
+# CSV but not listed here is a *new* column at load time, which the frozen
+# contract rejects. That is deliberate: an omission fails the load with the
+# column named, rather than quietly widening the warehouse.
 #
 # `table` values are the `identifier:` fields in
 # transform/models/staging/_sources.yml. dbt is written against them, so a
@@ -22,51 +27,122 @@ pipeline:
   # US multi-region, matching the raw bucket. Immutable after creation (§14).
   location: US
 
-# An unexpected column or a type change fails the load rather than silently
-# reshaping the warehouse (§4).
+# No column may appear, vanish, or change type without a reviewable edit to
+# this file (§4). Because every column is declared below rather than
+# discovered, `freeze` bites on the very first load — there is no run in which
+# dlt is still learning the shape.
+#
+# `tables` stays evolve, and must: dlt applies the contract against the stored
+# schema, so on a fresh dataset all nine tables read as new and freeze would
+# block the pipeline from ever creating them. Which tables exist is gated
+# upstream instead — `olist_source` yields one resource per entry below and
+# nothing else, so a tenth CSV in the raw zone is ignored, not loaded.
 schema_contract:
   tables: evolve
   columns: freeze
   data_type: freeze
 
-# text_columns: leading zeros that an integer parse would silently destroy.
-# timestamp_columns: typed explicitly so a load carrying none of them still
-# produces the column rather than dropping it.
+# Column types are dlt's, not BigQuery's: text -> STRING, bigint -> INT64,
+# double -> FLOAT64, timestamp -> TIMESTAMP.
+#
+# Every column is nullable. Raw stays faithful to source (§6), and the source
+# genuinely carries blanks — 611 product rows have no weight or dimensions, and
+# an undelivered order has no delivery date. not_null is asserted in dbt, on
+# the columns where it is actually true.
+#
+# Names are the source's, misspellings included (`product_name_lenght`).
+# stg_products renames them; nothing else does.
 tables:
   - file: olist_customers_dataset.csv
     table: olist_customers_dataset
-    text_columns: [customer_zip_code_prefix]
+    columns:
+      customer_id: text
+      customer_unique_id: text
+      # Leading zeros. An integer parse silently turns "01234" into 1234.
+      customer_zip_code_prefix: text
+      customer_city: text
+      customer_state: text
 
   - file: olist_orders_dataset.csv
     table: olist_orders_dataset
-    timestamp_columns:
-      - order_purchase_timestamp
-      - order_approved_at
-      - order_delivered_carrier_date
-      - order_delivered_customer_date
-      - order_estimated_delivery_date
+    columns:
+      order_id: text
+      customer_id: text
+      order_status: text
+      order_purchase_timestamp: timestamp
+      order_approved_at: timestamp
+      order_delivered_carrier_date: timestamp
+      order_delivered_customer_date: timestamp
+      order_estimated_delivery_date: timestamp
 
   - file: olist_order_items_dataset.csv
     table: olist_order_items_dataset
-    timestamp_columns: [shipping_limit_date]
+    columns:
+      order_id: text
+      order_item_id: bigint
+      product_id: text
+      seller_id: text
+      shipping_limit_date: timestamp
+      price: double
+      freight_value: double
 
   - file: olist_order_payments_dataset.csv
     table: olist_order_payments_dataset
+    columns:
+      order_id: text
+      payment_sequential: bigint
+      payment_type: text
+      payment_installments: bigint
+      payment_value: double
 
   - file: olist_order_reviews_dataset.csv
     table: olist_order_reviews_dataset
-    timestamp_columns: [review_creation_date, review_answer_timestamp]
+    columns:
+      review_id: text
+      order_id: text
+      review_score: bigint
+      # ~88% null across the full source. Declared because inference is a
+      # property of the load, not the dataset: a slice carrying no comment at
+      # all gives dlt nothing to infer from and the column is dropped.
+      review_comment_title: text
+      review_comment_message: text
+      review_creation_date: timestamp
+      review_answer_timestamp: timestamp
 
   - file: olist_products_dataset.csv
     table: olist_products_dataset
+    columns:
+      product_id: text
+      product_category_name: text
+      product_name_lenght: bigint
+      product_description_lenght: bigint
+      product_photos_qty: bigint
+      product_weight_g: bigint
+      product_length_cm: bigint
+      product_height_cm: bigint
+      product_width_cm: bigint
 
   - file: olist_sellers_dataset.csv
     table: olist_sellers_dataset
-    text_columns: [seller_zip_code_prefix]
+    columns:
+      seller_id: text
+      # Leading zeros, as above.
+      seller_zip_code_prefix: text
+      seller_city: text
+      seller_state: text
 
   - file: olist_geolocation_dataset.csv
     table: olist_geolocation_dataset
-    text_columns: [geolocation_zip_code_prefix]
+    columns:
+      # Leading zeros, as above.
+      geolocation_zip_code_prefix: text
+      geolocation_lat: double
+      geolocation_lng: double
+      geolocation_city: text
+      geolocation_state: text
 
   - file: product_category_name_translation.csv
     table: product_category_name_translation
+    columns:
+      product_category_name: text
+      product_category_name_english: text
