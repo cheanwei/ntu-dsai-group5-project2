@@ -147,7 +147,7 @@ never duplicates rows.
 ### Iterating on one layer
 
 ```bash
-uv run dagster dev -m orchestration.definitions   # UI on :3000, materialise any subset
+uv run dagster dev -m orchestration.definitions   # UI materialise any subset
 cd transform && uv run dbt build                  # models only, against dbt_dev
 uv run dbt docs generate && uv run dbt docs serve
 ```

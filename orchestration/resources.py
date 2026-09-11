@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from dagster import ConfigurableResource, EnvVar
@@ -65,16 +66,98 @@ def prepare_dbt_manifest() -> Path:
     the code location.
     """
     dbt_project.prepare_if_dev()
-    if not dbt_project.manifest_path.exists():
-        # dbt_utils supplies two tests the models use, and parse fails without
-        # it. transform/dbt_packages/ is gitignored, so a fresh clone has to
-        # install it before anything can read the project — doing it here is
-        # what keeps `uv run python orchestration/run_all.py` working as the
-        # first command after `uv sync`.
-        if dbt_project.has_uninstalled_deps:
+    if manifest_is_stale(DBT_PROJECT_DIR, dbt_project.manifest_path):
+        # The packages supply tests the models use — dbt_utils' two, and the
+        # dbt_expectations assertions of §7 — and parse fails on an
+        # unresolvable macro without them. transform/dbt_packages/ is
+        # gitignored, so a fresh clone has to install them before anything can
+        # read the project: doing it here is what keeps
+        # `uv run python orchestration/run_all.py` working as the first command
+        # after `uv sync`.
+        if deps_are_missing(DBT_PROJECT_DIR):
             subprocess.run(_dbt("deps"), check=True, env=_parse_env())
         subprocess.run(_dbt("parse"), check=True, env=_parse_env())
     return dbt_project.manifest_path
+
+
+# The paths `dbt parse` compiles a manifest from. What is *not* here matters as
+# much: `target/` is dbt's own output — it writes run_results.json and the
+# whole compiled/ tree after manifest.json in the same invocation, so comparing
+# against it would call every manifest stale the instant it was created — and
+# `dbt_packages/` is vendored code that moves only when package-lock.yml does,
+# which is `deps_are_missing`'s question rather than this one.
+DBT_SOURCE_DIRS = ("models", "macros", "seeds", "tests", "snapshots", "analyses")
+DBT_SOURCE_FILES = ("dbt_project.yml", "packages.yml", "package-lock.yml", "profiles.yml")
+
+
+def manifest_is_stale(project_dir: Path, manifest_path: Path) -> bool:
+    """Whether the manifest is older than the project it claims to describe.
+
+    **This is what keeps the dbt tests wired.** `@dbt_assets` derives one asset
+    check per dbt test from the manifest, once, when the code location loads;
+    `dbt build` at run time reads the project files instead. A manifest that
+    predates a schema.yml splits the two — dbt executes tests that Dagster has
+    no check key to record, so they run in BigQuery and land nowhere. That is
+    the state a checkout is in after pulling a commit that adds tests, which is
+    how the ten dbt_expectations assertions arrived.
+
+    Only the absence of a manifest used to trigger a parse, which covered the
+    fresh clone and the CI runner and nothing else. `prepare_if_dev()` covers a
+    third case — it re-parses on every `dagster dev` launch — and the two
+    remaining entrypoints, `run_all.py` and the container in
+    `orchestration/deploy/`, are exactly the ones where nobody is watching the
+    UI to notice checks had gone missing.
+
+    mtime rather than a content hash: a hash means reading every model on every
+    load to detect something that changes a few times a week, and a spurious
+    re-parse costs seconds while a missed one costs a silently unguarded build.
+    """
+    if not manifest_path.exists():
+        return True
+    manifest_mtime = manifest_path.stat().st_mtime
+    return any(path.stat().st_mtime > manifest_mtime for path in _dbt_source_files(project_dir))
+
+
+def _dbt_source_files(project_dir: Path) -> Iterator[Path]:
+    """Every file a parse reads, under the paths declared in dbt_project.yml."""
+    for name in DBT_SOURCE_FILES:
+        path = project_dir / name
+        if path.is_file():
+            yield path
+    for name in DBT_SOURCE_DIRS:
+        directory = project_dir / name
+        if directory.is_dir():
+            yield from (path for path in directory.rglob("*") if path.is_file())
+
+
+def deps_are_missing(project_dir: Path) -> bool:
+    """Whether `dbt deps` has to run before the project can be parsed.
+
+    `DbtProject.has_uninstalled_deps` is not enough, and it is worth saying why
+    rather than leaving the reimplementation looking like duplication: it asks
+    only whether `dbt_packages/` *exists* (dbt_project.py:318). So it answers
+    False for the case this project just hit — a commit adds a package to
+    packages.yml, the install directory is still there holding yesterday's set,
+    and the parse fails on a macro from the package nobody installed.
+
+    Comparing package-lock.yml against the install directory answers the real
+    question. A `git pull` that updates the lock leaves it newer; a `dbt deps`
+    that installs leaves the directory newer.
+
+    The comparison has to stay this conservative because `dbt deps` reaches the
+    package index, and this module's docstring promises `uv run pytest` runs
+    with no credentials and no network. Re-installing on every load would break
+    that for a directory that is already correct.
+    """
+    if not (project_dir / "packages.yml").is_file():
+        return False
+
+    install_dir = project_dir / "dbt_packages"
+    if not install_dir.is_dir():
+        return True
+
+    lock = project_dir / "package-lock.yml"
+    return lock.is_file() and lock.stat().st_mtime > install_dir.stat().st_mtime
 
 
 def _dbt(command: str) -> list[str]:
