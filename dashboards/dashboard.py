@@ -12,9 +12,27 @@ st.title("Olist Brazilian E-Commerce")           # big heading
 st.subheader("Revenue of Olist Brazilian E-Commerce split by Cities")  # smaller heading
 st.caption(f"Every number on this page came from our own API at {BASE}")
 
+cities = pd.DataFrame(requests.get(f"{BASE}/api/cities").json().get("cities", []))
+if cities.empty:
+    st.warning("No data loaded.")
+    st.stop()
+st.dataframe(cities, width="stretch")
 
-m = folium.Map(location=(-14.235, -51.925), zoom_start=4, tiles="OpenStreetMap")
+m = folium.Map(location=(-23.545, -46.639), zoom_start=4, tiles="OpenStreetMap")
+
+# Brazil_cities = [{"name": "Brasília", "latitude":-15.8267, "longitude":-47.921},
+#                        {"name": "Rio de Janeiro", "latitude":-22.9068, "longitude":-43.1729}]
+for city in cities.to_dict(orient="records"):
+    folium.Marker(
+        location=[city["latitude"], city["longitude"]],
+        popup=city["name"],
+        icon=folium.Icon(color="blue")
+    ).add_to(m)
+
 st_data = st_folium(m, width=700, height=500)
 
 # Show click info
 st.write("Map interaction:", st_data)
+m = folium.Map(location=(-14.235, -51.925), zoom_start=4, tiles="OpenStreetMap")
+st_data = st_folium(m, width=700, height=500)
+
