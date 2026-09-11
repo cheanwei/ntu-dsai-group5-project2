@@ -94,6 +94,13 @@ models:
 
   - name: fct_orders
     description: "{{ doc('fct_orders_overview') }}\n\n{{ doc('star_schema_design') }}"
+    data_tests:
+      # Detect empty or partial loads while allowing normal variation in the
+      # static Olist extract (~99k orders).
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          arguments:
+            min_value: 90000
+            max_value: 110000
     columns:
       - name: order_id
         description: TODO(C1)
@@ -113,6 +120,14 @@ models:
               arguments:
                 values: [delivered, shipped, canceled, unavailable, invoiced,
                          processing, created, approved]
+      - name: order_purchase_date
+        description: TODO(C1)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_not_be_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: "'2016-09-01'"
+                max_value: "'2018-12-31'"
 
   - name: fct_payments
     description: "{{ doc('fct_payments_overview') }}"
@@ -131,6 +146,23 @@ models:
           - accepted_values:
               arguments:
                 values: [credit_card, boleto, voucher, debit_card, not_defined]
+      - name: payment_value
+        description: TODO(C1)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+      - name: payment_installments
+        description: TODO(C1)
+        data_tests:
+          # A high installment count is plausible but merits investigation,
+          # rather than blocking a build.
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1
+                max_value: 24
+              config:
+                severity: warn
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -155,3 +187,11 @@ models:
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "between 1 and 5"
+          - dbt_expectations.expect_column_values_to_be_in_set:
+              arguments:
+                value_set: [1, 2, 3, 4, 5]
+                quote_values: false
+      - name: review_creation_date
+        description: TODO(C1)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_not_be_null
