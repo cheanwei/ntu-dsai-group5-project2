@@ -19,8 +19,6 @@ flowchart TB
   orders -. order_id .-> reviews
 ```
 
-[Open the editable dimensional diagram](diagrams/02-warehouse-dimensional-model.drawio).
-
 ## Why a fact constellation
 
 The source tables have different valid grains. One order can contain several

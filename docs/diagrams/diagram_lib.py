@@ -1,9 +1,8 @@
-"""Shared emitters: one diagram model -> draw.io (.drawio) and Excalidraw (.excalidraw)."""
+"""Shared Excalidraw emitter for the architecture diagram."""
 
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 # ---------------------------------------------------------------- palette ---
 # Excalidraw-native colours so the files look at home in either tool.
@@ -16,11 +15,8 @@ PALETTE = {
     "consume": ("#e6fcf5", "#0ca678"),
     "quality": ("#ffe3e3", "#e03131"),
     "orch": ("#fff4e6", "#e8590c"),
-    "fact": ("#e7f5ff", "#1971c2"),
-    "dim": ("#fff9db", "#f08c00"),
     "note": ("#f8f9fa", "#adb5bd"),
     "zone": ("#ffffff", "#adb5bd"),
-    "layer": ("#f3f0ff", "#6741d9"),
 }
 
 # Zone titles must read clearly; the dashed border stays light so it recedes.
@@ -59,72 +55,6 @@ class Diagram:
     height: int
     boxes: list = field(default_factory=list)
     edges: list = field(default_factory=list)
-
-
-# ---------------------------------------------------------------- draw.io ---
-def _dio_label(text: str) -> str:
-    """Build the HTML draw.io renders, then escape it whole for the XML attribute."""
-    lines = text.split("\n")
-    html = "<b>" + lines[0] + "</b>"
-    if len(lines) > 1:
-        html += "<br>" + "<br>".join(lines[1:])
-    return escape(html, {'"': "&quot;"})
-
-
-def to_drawio(d: Diagram) -> str:
-    cells = []
-    for b in sorted(d.boxes, key=lambda b: not b.zone):  # zones first = behind
-        fill, stroke = PALETTE[b.kind]
-        if b.zone:
-            style = (
-                f"rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;"
-                f"fillColor=none;strokeColor={stroke};strokeWidth=2;"
-                f"verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;"
-                f"fontSize={b.font};fontStyle=1;fontColor={ZONE_LABEL};"
-            )
-        else:
-            style = (
-                f"rounded=1;arcSize=8;whiteSpace=wrap;html=1;"
-                f"fillColor={fill};strokeColor={stroke};strokeWidth=2;"
-                f"align={b.align};verticalAlign=middle;spacingLeft=8;spacingRight=8;"
-                f"fontSize={b.font};fontColor=#212529;"
-            )
-        cells.append(
-            f'        <mxCell id="{b.id}" value="{_dio_label(b.label)}" style="{style}" '
-            f'vertex="1" parent="1">\n'
-            f'          <mxGeometry x="{b.x}" y="{b.y}" width="{b.w}" '
-            f'height="{b.h}" as="geometry"/>\n'
-            f"        </mxCell>"
-        )
-    for e in d.edges:
-        dash = "dashed=1;dashPattern=6 6;" if e.dashed else ""
-        style = (
-            f"edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;"
-            f"strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;{dash}"
-            f"fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;"
-        )
-        cells.append(
-            f'        <mxCell id="{e.id}" value="{escape(e.label)}" style="{style}" '
-            f'edge="1" parent="1" source="{e.src}" target="{e.dst}">\n'
-            f'          <mxGeometry relative="1" as="geometry"/>\n'
-            f"        </mxCell>"
-        )
-    body = "\n".join(cells)
-    return (
-        '<mxfile host="app.diagrams.net" type="device">\n'
-        f'  <diagram name="{escape(d.name)}" id="{d.name.replace(" ", "-").lower()}">\n'
-        f'    <mxGraphModel dx="1422" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" '
-        f'connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="{d.width}" '
-        f'pageHeight="{d.height}" math="0" shadow="0">\n'
-        "      <root>\n"
-        '        <mxCell id="0"/>\n'
-        '        <mxCell id="1" parent="0"/>\n'
-        f"{body}\n"
-        "      </root>\n"
-        "    </mxGraphModel>\n"
-        "  </diagram>\n"
-        "</mxfile>\n"
-    )
 
 
 # ------------------------------------------------------------- excalidraw ---
@@ -290,6 +220,5 @@ def to_excalidraw(d: Diagram) -> str:
 
 
 def emit(d: Diagram, stem: str, outdir: Path):
-    (outdir / f"{stem}.drawio").write_text(to_drawio(d))
     (outdir / f"{stem}.excalidraw").write_text(to_excalidraw(d))
-    print(f"  {stem}.drawio  +  {stem}.excalidraw   ({len(d.boxes)} boxes, {len(d.edges)} edges)")
+    print(f"  {stem}.excalidraw   ({len(d.boxes)} boxes, {len(d.edges)} edges)")

@@ -14,16 +14,6 @@ views, 4 intermediate views, and 8 dimensional marts, and exposes dbt tests as
 Dagster asset checks. See [Architecture](docs/architecture-design.md) for the
 design and [Star schema](docs/star_schema.md) for model grains and join rules.
 
-## Project status
-
-The ingestion, dbt, quality, orchestration, and deployment paths are
-implemented. The primary analysis is `notebooks/01_data_profiling.ipynb`.
-
-The `dashboards/` directory and `notebooks/02_sales_trends.ipynb` are
-prototypes: the Streamlit app calls an API route that is not implemented, the
-Power BI directory contains no report, and notebook 02 still reads local CSVs.
-Do not treat them as production consumers of the marts.
-
 ## Quick start
 
 Prerequisites:

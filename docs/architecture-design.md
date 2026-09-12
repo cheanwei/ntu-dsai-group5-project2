@@ -26,7 +26,7 @@ pattern.
 
 ## System flow
 
-[Open the high-level architecture diagram](diagrams/01-high-level-architecture.drawio).
+[Open the high-level architecture diagram](diagrams/01-high-level-architecture.excalidraw).
 
 ```text
 Kaggle
@@ -82,7 +82,7 @@ snapshot.
 | Concern | Choice | Reason | Alternatives considered |
 |---|---|---|---|
 | Warehouse | BigQuery | Columnar managed warehouse, elastic compute, and alignment with the course stack | Postgres is optimized for transactional workloads; DuckDB is useful locally but would not exercise the cloud architecture |
-| Ingestion | dlt | Fixed column hints, schema contracts, replace loads, and direct Dagster integration | Hand-written loads add retry/schema code; Meltano adds a Singer plugin boundary without removing the Kaggle download step |
+| Ingestion | dlt | Fixed column hints, schema contracts, replace loads, automatic `_dlt_loads` ingestion-run tracking, and direct Dagster integration | Hand-written loads add retry/schema/lineage code; Meltano adds a Singer plugin boundary without removing the Kaggle download step |
 | Transformation | dbt Core | Dependency graph, SQL models, tests, documentation, and model-level Dagster lineage | Raw SQL lacks dependency/test metadata; pandas and Spark are unnecessary transformation engines here |
 | Orchestration | Dagster | The pipeline is naturally an asset graph and integrates directly with dlt and dbt | Airflow would duplicate dbt dependencies; cron provides no asset lineage or conditional downstream execution |
 | Quality | dbt tests, dbt-utils, dbt-expectations | Structural and business checks run through one command and surface as asset checks | A separate assertion service would split ownership and reporting |
@@ -114,6 +114,8 @@ For this dataset, the decisive concerns are schema enforcement and integration:
 - The dlt schema contract fails on unexpected columns or incompatible types.
   This turns source drift into a failed run rather than a silently changed raw
   table.
+- dlt records ingestion-run metadata in its `_dlt_loads` table, giving operators
+  a load identifier and ingestion timing without a second tracking system.
 - `dagster-dlt` exposes the nine loaded resources individually. A generic
   command wrapper would collapse that part of the lineage graph.
 - dlt is one version-pinned dependency. A Singer pipeline would also require
@@ -141,6 +143,7 @@ described as scale-aware design, not as a performance result from this sample.
 | Quality | dbt, dbt-utils, dbt-expectations | Check keys, relationships, domains, ranges, and invariants |
 | Orchestration | `orchestration/` | Materialize assets, schedule ingestion, and trigger dbt |
 | Analysis | `notebooks/01_data_profiling.ipynb` | Query the marts and present the main analysis |
+| Dashboards | `dashboards/` | Flask/Streamlit prototypes; not yet connected as production consumers |
 | Documentation | dbt Docs, `docs/` | Publish the catalog, lineage, and design record |
 
 The repository mirrors these boundaries so that each layer can be developed
@@ -212,8 +215,8 @@ surface broken invariants.
 ### Dimensional model
 
 The marts form a fact constellation with four facts and four conformed
-dimensions. See [Star schema](star_schema.md) and the
-[dimensional diagram](diagrams/02-warehouse-dimensional-model.drawio).
+dimensions. See [Star schema](star_schema.md), which contains the dimensional
+model diagram and join guidance.
 
 Important modeling choices:
 
@@ -352,32 +355,3 @@ destination locations, and dataset locations cannot be changed in place.
 The location is therefore explicit in provisioning, dlt, dbt profiles, and
 CI. An existing resource in another location is treated as configuration drift
 instead of being reused until a later load fails.
-
-## Constraints and risks
-
-| Risk | Control or accepted limitation |
-|---|---|
-| Source schema changes silently | Fixed column and type contract fails the load |
-| Kaggle is unavailable after extraction | Dated raw-zone objects can be replayed |
-| Reruns duplicate data | Stable object names plus replace loads |
-| Payment-to-item fan-out | Separate facts and order-grain reconciliation |
-| Wrong customer identity | Mart key and tests use `customer_unique_id` |
-| Incomplete 2018 tail looks like decline | `dim_date.is_complete_month` flags safe periods |
-| Lifecycle timestamps contain source anomalies | Warning-severity ordering checks keep them visible |
-| Credentials enter git or images | Ignore rules, Actions secrets, runtime mounts, and bootstrap safeguards |
-| Hosted history is lost with the VM | Accepted: SQLite is durable on disk but not replicated |
-| The small VM runs out of memory | Reduced two-service topology, swap, bounded logs, and larger-machine escape hatch |
-| Two schedulers race on replace loads | Only the hosted daemon owns the daily schedule |
-| Static source is refreshed daily | Deliberate demonstration of an arrival-driven design; not a claim that Kaggle changes daily |
-| Prototype consumers are mistaken for production | Status is explicit in the README and architecture diagram |
-
-## Future work
-
-Potential improvements, not current capabilities:
-
-- add a tested payment-reconciliation threshold
-- complete notebook 02 against `olist_marts`
-- implement and test the Flask API before enabling Streamlit
-- add a Power BI report only if it is required as a deliverable
-- move Dagster metadata to a replicated store if shared or recoverable run
-  history becomes a requirement
