@@ -1,23 +1,35 @@
 {% docs star_schema_design %}
 
 The marts use a fact constellation: four facts retain their natural grains and
-share customer, product, seller, and date dimensions.
+share customer, product, seller, and date dimensions. Keeping payments and
+order items separate prevents the many-to-many fan-out that would repeat a
+payment for every item in the same order.
 
-- Use `fct_orders.payment_value_total` for order-level revenue.
+`fct_orders` is the order-grain hub for delivery, review, and reconciled
+revenue analysis. Atomic payment and item facts remain available when an
+analysis needs payment-method, product, or seller detail.
+
+| Model | Grain | Primary use |
+|---|---|---|
+| `fct_orders` | one order | delivery performance and order-grain revenue |
+| `fct_order_items` | `order_id + order_item_id` | product, seller, price, and freight |
+| `fct_payments` | `order_id + payment_sequential` | payment method and installments |
+| `fct_reviews` | one deduplicated review | score, comments, and response time |
+| `dim_customer` | `customer_unique_id` | repeat behavior, value, recency, and location |
+| `dim_product` | `product_id` | category and physical attributes |
+| `dim_seller` | `seller_id` | seller location |
+| `dim_date` | one calendar date | shared calendar attributes |
+
+Safe analytical rules:
+
+- Use `fct_orders.payment_value_total` for order-level realized revenue.
 - Use `fct_order_items.line_gross_value` for product and seller analysis.
-- Do not join payments directly to order items; aggregate at order grain first.
-- Use `customer_key`, derived from `customer_unique_id`, for customer analysis.
-
-| Model | Grain |
-|---|---|
-| `fct_orders` | one order |
-| `fct_order_items` | `order_id + order_item_id` |
-| `fct_payments` | `order_id + payment_sequential` |
-| `fct_reviews` | one deduplicated review |
-| `dim_customer` | `customer_unique_id` |
-| `dim_product` | `product_id` |
-| `dim_seller` | `seller_id` |
-| `dim_date` | one calendar date |
+- Do not join payments directly to order items; aggregate each to order grain
+  before comparing them.
+- Use `customer_key`, derived from `customer_unique_id`, for customer
+  analysis. Raw `customer_id` is order-specific.
+- Use `dim_date.is_complete_month` when an incomplete source period would
+  distort a trend.
 
 {% enddocs %}
 

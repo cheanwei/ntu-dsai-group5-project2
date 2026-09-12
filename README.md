@@ -44,7 +44,7 @@ uv run nbstripout --install
 uv run python scripts/bootstrap_env.py
 ```
 
-`bootstrap_env.py` copies `.env.example` when needed and securely prompts for,
+`scripts/bootstrap_env.py` copies `.env.example` when needed and securely prompts for,
 reads, or mints a Kaggle token. Complete these values in `.env`:
 
 ```dotenv
@@ -66,7 +66,9 @@ gcloud auth login
 
 Use `--grant-bigquery` if the service account does not already have the needed
 BigQuery roles. The script creates or validates the US multi-region raw bucket
-and datasets, then grants bucket access.
+and datasets, then grants bucket access. See
+[Utility scripts](scripts/README.md) for credential precedence, security
+guarantees, location checks, and IAM boundaries.
 
 ## Run the pipeline
 
@@ -124,6 +126,25 @@ uv run ruff check .
 
 dbt tests run as part of `dbt build`. The complete quality inventory is in
 [Data-quality tests](docs/data_quality_tests.md).
+
+## Development guardrails
+
+- Run `uv run nbstripout --install` in every clone. The committed
+  `.gitattributes` declares the filter, but each clone must register the
+  executable locally or notebook outputs can enter commits silently.
+- The `dev` target always writes to `dbt_dev_*` datasets. Developer
+  isolation comes from using a separate `GCP_PROJECT`, not from renaming the
+  target dataset.
+- Put each cleanup rule in the earliest layer with enough context: source
+  types in ingestion, single-table cleanup in staging, cross-table logic in
+  intermediate models, and reporting grains in marts. Notebooks should not
+  implement another cleaning layer.
+
+If a python.org macOS installation fails during the GCS read with
+`CERTIFICATE_VERIFY_FAILED`, run the `Install Certificates.command` bundled
+in that Python version's `/Applications/Python 3.x/` directory, confirm
+Python now reports a CA file, then resume from the existing raw prefix with
+`--bucket-url` instead of downloading again.
 
 ## Automation and reports
 
