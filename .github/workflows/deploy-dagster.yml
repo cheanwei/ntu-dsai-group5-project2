@@ -38,7 +38,6 @@ on:
     paths:
       - "ingestion/**"
       - "transform/**"
-      - "quality/**"
       - "orchestration/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -240,8 +239,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          # The repo root: the Dockerfile copies ingestion/, transform/,
-          # quality/ and orchestration/, not just the deploy directory.
+          # The repo root: the Dockerfile copies ingestion/, transform/ and
+          # orchestration/, not just the deploy directory.
           context: .
           file: orchestration/deploy/Dockerfile
           push: true

@@ -63,7 +63,7 @@ services:
   webserver:
     <<: *dagster
     build:
-      # The repo root: the image needs ingestion/, transform/, quality/ and
+      # The repo root: the image needs ingestion/, transform/ and
       # orchestration/, not just this directory.
       context: ../..
       dockerfile: orchestration/deploy/Dockerfile

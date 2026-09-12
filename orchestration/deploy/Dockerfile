@@ -55,11 +55,15 @@ COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /opt/dagster/app
 
-# The four packages a run touches, and nothing else: no notebooks, no docs, no
+# The three packages a run touches, and nothing else: no notebooks, no docs, no
 # dashboards. .dockerignore drops the generated state inside them.
+#
+# There is no quality/ to copy: §7's assertions are dbt tests from
+# dbt_expectations, so they ship inside transform/ (see orchestration/assets.py,
+# "Layer 4"). The Great Expectations tree this used to copy was removed in
+# 840b7da.
 COPY ingestion ./ingestion
 COPY transform ./transform
-COPY quality ./quality
 COPY orchestration ./orchestration
 COPY pyproject.toml ./
 
