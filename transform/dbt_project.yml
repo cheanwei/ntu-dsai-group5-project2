@@ -26,10 +26,6 @@ models:
       +materialized: table
       +schema: marts
 
-seeds:
-  olist:
-    +schema: seeds
-
 vars:
   # The dataset ends part-way through October 2018. Trend charts must exclude
   # or annotate the incomplete tail — presenting it as a revenue collapse is

@@ -2,17 +2,16 @@ version: 2
 
 models:
   - name: int_geolocation_deduped
-    description: TODO(C1)
+    description: One median latitude/longitude pair per valid Brazilian zip prefix.
     columns:
       - name: geolocation_zip_code_prefix
-        description: TODO(C1)
+        description: Zip prefix used to enrich customer and seller dimensions.
         data_tests: [unique, not_null]
 
   - name: int_order_lifecycle
-    description: TODO(C1)
+    description: Order-grain lifecycle timestamps, duration metrics, late flag, and revenue status.
     data_tests:
-      # A small number of source monotonicity violations are known. Track
-      # regressions without failing the pipeline on those historical rows.
+      # Known source anomalies should remain visible without blocking the build.
       - dbt_expectations.expect_column_pair_values_A_to_be_greater_than_B:
           arguments:
             column_A: order_approved_at
@@ -39,23 +38,21 @@ models:
             severity: warn
     columns:
       - name: order_id
-        description: TODO(C1)
+        description: Source order identifier at the model's grain.
         data_tests: [unique, not_null]
       - name: is_late
-        description: >
-          TODO(C1). Null — not false — for undelivered orders. Deliberate (§6).
+        description: True when delivery missed the estimate; null for undelivered orders.
 
   - name: int_order_payment_totals
-    description: TODO(C1)
+    description: Item and payment totals aggregated independently and reconciled at order grain.
     columns:
       - name: order_id
-        description: TODO(C1)
+        description: Source order identifier at the model's grain.
         data_tests: [unique, not_null]
 
-
   - name: int_customer_order_history
-    description: TODO(C1)
+    description: Order history and lifetime metrics grouped by stable customer identity.
     columns:
       - name: customer_unique_id
-        description: TODO(C1)
+        description: Stable source customer identifier used as the model key.
         data_tests: [unique, not_null]

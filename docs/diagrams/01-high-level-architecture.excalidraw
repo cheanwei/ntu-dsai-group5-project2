@@ -461,7 +461,7 @@
       "id": "title_t",
       "x": 52,
       "y": 35.0,
-      "width": 853.8,
+      "width": 696.0,
       "height": 40.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -483,8 +483,8 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "Olist Brazilian E-Commerce  \u00b7  Data Platform Architecture\nKaggle CSVs \u2192 GCS raw zone \u2192 dlt \u2192 BigQuery (ELT via dbt) \u2192 notebooks \u00b7 Streamlit \u00b7 Power BI",
-      "originalText": "Olist Brazilian E-Commerce  \u00b7  Data Platform Architecture\nKaggle CSVs \u2192 GCS raw zone \u2192 dlt \u2192 BigQuery (ELT via dbt) \u2192 notebooks \u00b7 Streamlit \u00b7 Power BI",
+      "text": "Olist Brazilian E-Commerce  \u00b7  Data Platform Architecture\nKaggle CSVs \u2192 GCS raw zone \u2192 dlt \u2192 BigQuery \u2192 dbt marts \u2192 notebook analysis",
+      "originalText": "Olist Brazilian E-Commerce  \u00b7  Data Platform Architecture\nKaggle CSVs \u2192 GCS raw zone \u2192 dlt \u2192 BigQuery \u2192 dbt marts \u2192 notebook analysis",
       "fontSize": 16,
       "fontFamily": 2,
       "textAlign": "center",
@@ -617,7 +617,7 @@
       "id": "gcs_t",
       "x": 327,
       "y": 230.0,
-      "width": 156,
+      "width": 139.2,
       "height": 60.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -639,8 +639,8 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "Cloud Storage\ngs://olist-raw/\ningest_date=YYYY-MM-DD/\nimmutable \u00b7 replayable",
-      "originalText": "Cloud Storage\ngs://olist-raw/\ningest_date=YYYY-MM-DD/\nimmutable \u00b7 replayable",
+      "text": "Cloud Storage\ngs://<raw-bucket>/\nYYYY-MM-DD/\nreplayable raw files",
+      "originalText": "Cloud Storage\ngs://<raw-bucket>/\nYYYY-MM-DD/\nreplayable raw files",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
@@ -955,8 +955,8 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "olist_int  (views)\ngeo dedupe \u00b7 order lifecycle\nreusable business logic",
-      "originalText": "olist_int  (views)\ngeo dedupe \u00b7 order lifecycle\nreusable business logic",
+      "text": "olist_intermediate  (views)\ngeo dedupe \u00b7 order lifecycle\nreusable business logic",
+      "originalText": "olist_intermediate  (views)\ngeo dedupe \u00b7 order lifecycle\nreusable business logic",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
@@ -999,14 +999,6 @@
         },
         {
           "id": "f7",
-          "type": "arrow"
-        },
-        {
-          "id": "f7b",
-          "type": "arrow"
-        },
-        {
-          "id": "f7c",
           "type": "arrow"
         },
         {
@@ -1112,9 +1104,9 @@
     {
       "id": "dbttests_t",
       "x": 592,
-      "y": 471.0,
-      "width": 125.3,
-      "height": 60.0,
+      "y": 478.5,
+      "width": 146,
+      "height": 45.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1135,8 +1127,8 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "dbt tests \u2014 tier 1\nunique \u00b7 not_null\nrelationships\naccepted_values",
-      "originalText": "dbt tests \u2014 tier 1\nunique \u00b7 not_null\nrelationships\naccepted_values",
+      "text": "dbt built-ins + dbt-utils\nunique \u00b7 not_null\nrelationships \u00b7 domains",
+      "originalText": "dbt built-ins + dbt-utils\nunique \u00b7 not_null\nrelationships \u00b7 domains",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
@@ -1195,7 +1187,7 @@
       "id": "gx_t",
       "x": 592,
       "y": 568.5,
-      "width": 146,
+      "width": 132.2,
       "height": 45.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -1217,8 +1209,8 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "dbt-expectations \u2014 tier 2\nbusiness invariants\ninside dbt build",
-      "originalText": "dbt-expectations \u2014 tier 2\nbusiness invariants\ninside dbt build",
+      "text": "dbt-expectations\nranges \u00b7 value sets\ntimestamp ordering",
+      "originalText": "dbt-expectations\nranges \u00b7 value sets\ntimestamp ordering",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
@@ -1232,7 +1224,7 @@
       "x": 1195,
       "y": 200,
       "width": 210,
-      "height": 92,
+      "height": 100,
       "angle": 0,
       "strokeColor": "#0ca678",
       "backgroundColor": "#e6fcf5",
@@ -1268,8 +1260,8 @@
     {
       "id": "nb_t",
       "x": 1207,
-      "y": 216.0,
-      "width": 153.1,
+      "y": 220.0,
+      "width": 186,
       "height": 60.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -1291,8 +1283,8 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "Jupyter + pandas\nSQLAlchemy\n(sqlalchemy-bigquery)\nsales \u00b7 products \u00b7 RFM",
-      "originalText": "Jupyter + pandas\nSQLAlchemy\n(sqlalchemy-bigquery)\nsales \u00b7 products \u00b7 RFM",
+      "text": "Jupyter + pandas\n01_data_profiling.ipynb\nSQLAlchemy BigQuery dialect\nqueries marts",
+      "originalText": "Jupyter + pandas\n01_data_profiling.ipynb\nSQLAlchemy BigQuery dialect\nqueries marts",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
@@ -1302,11 +1294,11 @@
       "autoResize": false
     },
     {
-      "id": "streamlit",
+      "id": "dbtdocs",
       "x": 1195,
-      "y": 302,
+      "y": 325,
       "width": 210,
-      "height": 92,
+      "height": 75,
       "angle": 0,
       "strokeColor": "#0ca678",
       "backgroundColor": "#e6fcf5",
@@ -1326,11 +1318,11 @@
       "isDeleted": false,
       "boundElements": [
         {
-          "id": "streamlit_t",
+          "id": "dbtdocs_t",
           "type": "text"
         },
         {
-          "id": "f7b",
+          "id": "f8",
           "type": "arrow"
         }
       ],
@@ -1340,11 +1332,11 @@
       "type": "rectangle"
     },
     {
-      "id": "streamlit_t",
+      "id": "dbtdocs_t",
       "x": 1207,
-      "y": 318.0,
+      "y": 347.5,
       "width": 160.1,
-      "height": 60.0,
+      "height": 30.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1365,22 +1357,22 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "Streamlit app\ndashboards/dashboard.py\nFlask API + folium map\nself-serve exploration",
-      "originalText": "Streamlit app\ndashboards/dashboard.py\nFlask API + folium map\nself-serve exploration",
+      "text": "dbt docs\nlineage graph + catalog",
+      "originalText": "dbt docs\nlineage graph + catalog",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "streamlit",
+      "containerId": "dbtdocs",
       "lineHeight": 1.25,
       "autoResize": false
     },
     {
-      "id": "powerbi",
+      "id": "gxdocs",
       "x": 1195,
-      "y": 404,
+      "y": 425,
       "width": 210,
-      "height": 92,
+      "height": 75,
       "angle": 0,
       "strokeColor": "#0ca678",
       "backgroundColor": "#e6fcf5",
@@ -1400,11 +1392,11 @@
       "isDeleted": false,
       "boundElements": [
         {
-          "id": "powerbi_t",
+          "id": "gxdocs_t",
           "type": "text"
         },
         {
-          "id": "f7c",
+          "id": "f9",
           "type": "arrow"
         }
       ],
@@ -1414,11 +1406,11 @@
       "type": "rectangle"
     },
     {
-      "id": "powerbi_t",
+      "id": "gxdocs_t",
       "x": 1207,
-      "y": 420.0,
-      "width": 174.0,
-      "height": 60.0,
+      "y": 447.5,
+      "width": 139.2,
+      "height": 30.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1439,25 +1431,25 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "Power BI\nnative BigQuery connector\ndashboards/powerbi/\nexecutive KPI report",
-      "originalText": "Power BI\nnative BigQuery connector\ndashboards/powerbi/\nexecutive KPI report",
+      "text": "Dagster asset checks\npass/fail per asset",
+      "originalText": "Dagster asset checks\npass/fail per asset",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "powerbi",
+      "containerId": "gxdocs",
       "lineHeight": 1.25,
       "autoResize": false
     },
     {
-      "id": "dbtdocs",
+      "id": "prototypes",
       "x": 1195,
-      "y": 506,
+      "y": 525,
       "width": 210,
-      "height": 60,
+      "height": 100,
       "angle": 0,
-      "strokeColor": "#0ca678",
-      "backgroundColor": "#e6fcf5",
+      "strokeColor": "#adb5bd",
+      "backgroundColor": "#f8f9fa",
       "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
@@ -1474,12 +1466,8 @@
       "isDeleted": false,
       "boundElements": [
         {
-          "id": "dbtdocs_t",
+          "id": "prototypes_t",
           "type": "text"
-        },
-        {
-          "id": "f8",
-          "type": "arrow"
         }
       ],
       "updated": 1,
@@ -1488,11 +1476,11 @@
       "type": "rectangle"
     },
     {
-      "id": "dbtdocs_t",
+      "id": "prototypes_t",
       "x": 1207,
-      "y": 521.0,
-      "width": 160.1,
-      "height": 30.0,
+      "y": 547.5,
+      "width": 178.6,
+      "height": 55.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1513,87 +1501,13 @@
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "dbt docs\nlineage graph + catalog",
-      "originalText": "dbt docs\nlineage graph + catalog",
-      "fontSize": 12,
+      "text": "Prototypes (not connected)\nnotebook 02: local CSVs\nStreamlit: missing API route\nPower BI: no report",
+      "originalText": "Prototypes (not connected)\nnotebook 02: local CSVs\nStreamlit: missing API route\nPower BI: no report",
+      "fontSize": 11,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
-      "containerId": "dbtdocs",
-      "lineHeight": 1.25,
-      "autoResize": false
-    },
-    {
-      "id": "gxdocs",
-      "x": 1195,
-      "y": 576,
-      "width": 210,
-      "height": 56,
-      "angle": 0,
-      "strokeColor": "#0ca678",
-      "backgroundColor": "#e6fcf5",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": {
-        "type": 3
-      },
-      "seed": 642439,
-      "version": 1,
-      "versionNonce": 650358,
-      "isDeleted": false,
-      "boundElements": [
-        {
-          "id": "gxdocs_t",
-          "type": "text"
-        },
-        {
-          "id": "f9",
-          "type": "arrow"
-        }
-      ],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "type": "rectangle"
-    },
-    {
-      "id": "gxdocs_t",
-      "x": 1207,
-      "y": 589.0,
-      "width": 139.2,
-      "height": 30.0,
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": null,
-      "seed": 658277,
-      "version": 1,
-      "versionNonce": 666196,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "type": "text",
-      "text": "Dagster asset checks\npass/fail per asset",
-      "originalText": "Dagster asset checks\npass/fail per asset",
-      "fontSize": 12,
-      "fontFamily": 2,
-      "textAlign": "center",
-      "verticalAlign": "middle",
-      "containerId": "gxdocs",
+      "containerId": "prototypes",
       "lineHeight": 1.25,
       "autoResize": false
     },
@@ -1616,9 +1530,9 @@
       "roundness": {
         "type": 3
       },
-      "seed": 674115,
+      "seed": 642439,
       "version": 1,
-      "versionNonce": 682034,
+      "versionNonce": 650358,
       "isDeleted": false,
       "boundElements": [
         {
@@ -1660,9 +1574,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 689953,
+      "seed": 658277,
       "version": 1,
-      "versionNonce": 697872,
+      "versionNonce": 666196,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -1698,9 +1612,9 @@
       "roundness": {
         "type": 3
       },
-      "seed": 705791,
+      "seed": 674115,
       "version": 1,
-      "versionNonce": 713710,
+      "versionNonce": 682034,
       "isDeleted": false,
       "boundElements": [
         {
@@ -1717,7 +1631,7 @@
       "id": "legend_t",
       "x": 52,
       "y": 846.0,
-      "width": 744.7,
+      "width": 758.6,
       "height": 30.0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -1730,17 +1644,17 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 721629,
+      "seed": 689953,
       "version": 1,
-      "versionNonce": 729548,
+      "versionNonce": 697872,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
       "link": null,
       "locked": false,
       "type": "text",
-      "text": "Solid = data flow   \u00b7   Dashed = control / validation   \u00b7   Raw zone makes every downstream step replayable\nELT over ETL: warehouse compute is elastic and transformations stay re-runnable without re-ingesting",
-      "originalText": "Solid = data flow   \u00b7   Dashed = control / validation   \u00b7   Raw zone makes every downstream step replayable\nELT over ETL: warehouse compute is elastic and transformations stay re-runnable without re-ingesting",
+      "text": "Solid = data flow   \u00b7   Dashed = control / validation   \u00b7   Unfinished prototypes are excluded from data flow\nThe raw zone makes loading and transformation repeatable without downloading from Kaggle again",
+      "originalText": "Solid = data flow   \u00b7   Dashed = control / validation   \u00b7   Unfinished prototypes are excluded from data flow\nThe raw zone makes loading and transformation repeatable without downloading from Kaggle again",
       "fontSize": 12,
       "fontFamily": 2,
       "textAlign": "center",
@@ -1768,9 +1682,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 737467,
+      "seed": 705791,
       "version": 1,
-      "versionNonce": 745386,
+      "versionNonce": 713710,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -1819,9 +1733,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 753305,
+      "seed": 721629,
       "version": 1,
-      "versionNonce": 761224,
+      "versionNonce": 729548,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -1857,9 +1771,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 769143,
+      "seed": 737467,
       "version": 1,
-      "versionNonce": 777062,
+      "versionNonce": 745386,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -1908,9 +1822,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 784981,
+      "seed": 753305,
       "version": 1,
-      "versionNonce": 792900,
+      "versionNonce": 761224,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -1946,9 +1860,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 800819,
+      "seed": 769143,
       "version": 1,
-      "versionNonce": 808738,
+      "versionNonce": 777062,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2005,9 +1919,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 816657,
+      "seed": 784981,
       "version": 1,
-      "versionNonce": 824576,
+      "versionNonce": 792900,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2043,9 +1957,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 832495,
+      "seed": 800819,
       "version": 1,
-      "versionNonce": 840414,
+      "versionNonce": 808738,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2094,9 +2008,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 848333,
+      "seed": 816657,
       "version": 1,
-      "versionNonce": 856252,
+      "versionNonce": 824576,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2132,9 +2046,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 864171,
+      "seed": 832495,
       "version": 1,
-      "versionNonce": 872090,
+      "versionNonce": 840414,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2183,9 +2097,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 880009,
+      "seed": 848333,
       "version": 1,
-      "versionNonce": 887928,
+      "versionNonce": 856252,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2221,9 +2135,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 895847,
+      "seed": 864171,
       "version": 1,
-      "versionNonce": 903766,
+      "versionNonce": 872090,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2272,9 +2186,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 911685,
+      "seed": 880009,
       "version": 1,
-      "versionNonce": 919604,
+      "versionNonce": 887928,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2310,9 +2224,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 927523,
+      "seed": 895847,
       "version": 1,
-      "versionNonce": 935442,
+      "versionNonce": 903766,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2369,9 +2283,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 943361,
+      "seed": 911685,
       "version": 1,
-      "versionNonce": 951280,
+      "versionNonce": 919604,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2389,9 +2303,9 @@
       "autoResize": true
     },
     {
-      "id": "f7b",
+      "id": "f8",
       "x": 1095,
-      "y": 486,
+      "y": 500,
       "width": 100,
       "height": 138,
       "angle": 0,
@@ -2407,9 +2321,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 959199,
+      "seed": 927523,
       "version": 1,
-      "versionNonce": 967118,
+      "versionNonce": 935442,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2432,200 +2346,6 @@
         [
           100,
           -138
-        ]
-      ],
-      "lastCommittedPoint": null,
-      "startBinding": {
-        "elementId": "marts",
-        "focus": 0,
-        "gap": 4
-      },
-      "endBinding": {
-        "elementId": "streamlit",
-        "focus": 0,
-        "gap": 4
-      },
-      "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "elbowed": false
-    },
-    {
-      "id": "f7b_l",
-      "x": 1138.45,
-      "y": 393.0,
-      "width": 19.1,
-      "height": 13.75,
-      "angle": 0,
-      "strokeColor": "#495057",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": null,
-      "seed": 975037,
-      "version": 1,
-      "versionNonce": 982956,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "type": "text",
-      "text": "SQL",
-      "originalText": "SQL",
-      "fontSize": 11,
-      "fontFamily": 2,
-      "textAlign": "center",
-      "verticalAlign": "middle",
-      "containerId": null,
-      "lineHeight": 1.25,
-      "autoResize": true
-    },
-    {
-      "id": "f7c",
-      "x": 1095,
-      "y": 506,
-      "width": 100,
-      "height": 56,
-      "angle": 0,
-      "strokeColor": "#495057",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": {
-        "type": 2
-      },
-      "seed": 990875,
-      "version": 1,
-      "versionNonce": 998794,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "type": "arrow",
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          61,
-          0
-        ],
-        [
-          61,
-          -56
-        ],
-        [
-          100,
-          -56
-        ]
-      ],
-      "lastCommittedPoint": null,
-      "startBinding": {
-        "elementId": "marts",
-        "focus": 0,
-        "gap": 4
-      },
-      "endBinding": {
-        "elementId": "powerbi",
-        "focus": 0,
-        "gap": 4
-      },
-      "startArrowhead": null,
-      "endArrowhead": "arrow",
-      "elbowed": false
-    },
-    {
-      "id": "f7c_l",
-      "x": 1127.3,
-      "y": 454.0,
-      "width": 57.4,
-      "height": 13.75,
-      "angle": 0,
-      "strokeColor": "#495057",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": null,
-      "seed": 1006713,
-      "version": 1,
-      "versionNonce": 1014632,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "type": "text",
-      "text": "connector",
-      "originalText": "connector",
-      "fontSize": 11,
-      "fontFamily": 2,
-      "textAlign": "center",
-      "verticalAlign": "middle",
-      "containerId": null,
-      "lineHeight": 1.25,
-      "autoResize": true
-    },
-    {
-      "id": "f8",
-      "x": 1095,
-      "y": 526,
-      "width": 100,
-      "height": 10,
-      "angle": 0,
-      "strokeColor": "#495057",
-      "backgroundColor": "transparent",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "strokeStyle": "solid",
-      "roughness": 1,
-      "opacity": 100,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": {
-        "type": 2
-      },
-      "seed": 1022551,
-      "version": 1,
-      "versionNonce": 1030470,
-      "isDeleted": false,
-      "boundElements": [],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "type": "arrow",
-      "points": [
-        [
-          0,
-          0
-        ],
-        [
-          69,
-          0
-        ],
-        [
-          69,
-          10
-        ],
-        [
-          100,
-          10
         ]
       ],
       "lastCommittedPoint": null,
@@ -2648,7 +2368,7 @@
       "x": 750,
       "y": 591,
       "width": 445,
-      "height": 13,
+      "height": 129,
       "angle": 0,
       "strokeColor": "#495057",
       "backgroundColor": "transparent",
@@ -2662,9 +2382,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 1038389,
+      "seed": 943361,
       "version": 1,
-      "versionNonce": 1046308,
+      "versionNonce": 951280,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2682,11 +2402,11 @@
         ],
         [
           422,
-          13
+          -129
         ],
         [
           445,
-          13
+          -129
         ]
       ],
       "lastCommittedPoint": null,
@@ -2723,9 +2443,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 1054227,
+      "seed": 959199,
       "version": 1,
-      "versionNonce": 1062146,
+      "versionNonce": 967118,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2776,9 +2496,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 1070065,
+      "seed": 975037,
       "version": 1,
-      "versionNonce": 1077984,
+      "versionNonce": 982956,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2829,9 +2549,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 1085903,
+      "seed": 990875,
       "version": 1,
-      "versionNonce": 1093822,
+      "versionNonce": 998794,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2880,9 +2600,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 1101741,
+      "seed": 1006713,
       "version": 1,
-      "versionNonce": 1109660,
+      "versionNonce": 1014632,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2918,9 +2638,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 1117579,
+      "seed": 1022551,
       "version": 1,
-      "versionNonce": 1125498,
+      "versionNonce": 1030470,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -2971,9 +2691,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 1133417,
+      "seed": 1038389,
       "version": 1,
-      "versionNonce": 1141336,
+      "versionNonce": 1046308,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,
@@ -3024,9 +2744,9 @@
       "roundness": {
         "type": 2
       },
-      "seed": 1149255,
+      "seed": 1054227,
       "version": 1,
-      "versionNonce": 1157174,
+      "versionNonce": 1062146,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,

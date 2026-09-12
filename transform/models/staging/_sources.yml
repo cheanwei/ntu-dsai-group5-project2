@@ -4,7 +4,7 @@ sources:
   - name: olist_raw
     description: >
       Raw landing tables loaded by dlt from the GCS raw zone. Faithful to
-      source: type enforcement only, no cleaning (§6). Every row carries
+      source: type enforcement only, no cleaning. Every row carries
       `_dlt_load_id`, so "which run produced this row" is answerable in SQL.
     database: "{{ env_var('GCP_PROJECT') }}"
     schema: olist_raw
@@ -20,34 +20,33 @@ sources:
     tables:
       - name: customers
         identifier: olist_customers_dataset
-        description: One row per order-level customer surrogate. TODO(C1)
+        description: One row per order-level customer record.
         columns:
           - name: customer_id
             description: >
               Per-order surrogate, NOT a stable customer key. Keying a
-              dimension on it yields ~99k customers who each ordered once
-              (§5.2).
+              dimension on it would hide repeat customers.
             data_tests: [unique, not_null]
           - name: customer_unique_id
             description: The stable customer key. `dim_customer` is keyed on this.
             data_tests: [not_null]
           - name: customer_zip_code_prefix
-            description: Leading-zero-bearing prefix. Must be STRING (§4).
+            description: Leading-zero-bearing prefix loaded as a string.
 
       - name: orders
         identifier: olist_orders_dataset
-        description: One row per order. TODO(C1)
+        description: One row per order and its lifecycle timestamps.
         columns:
           - name: order_id
             data_tests: [unique, not_null]
 
       - name: order_items
         identifier: olist_order_items_dataset
-        description: One row per order line. The atomic sales grain. TODO(C1)
+        description: One row per order line; the atomic sales grain.
 
       - name: order_payments
         identifier: olist_order_payments_dataset
-        description: One row per payment instrument per order. TODO(C1)
+        description: One row per payment sequence within an order.
 
       - name: order_reviews
         identifier: olist_order_reviews_dataset
@@ -63,14 +62,14 @@ sources:
 
       - name: sellers
         identifier: olist_sellers_dataset
-        description: One row per seller. TODO(C1)
+        description: One row per seller and its source location.
 
       - name: geolocation
         identifier: olist_geolocation_dataset
         description: >
           ~1M rows across ~19k zip prefixes. Reduced to one median lat/lng per
-          prefix in `int_geolocation_deduped` (§5.2).
+          prefix in `int_geolocation_deduped`.
 
       - name: product_category_translation
         identifier: product_category_name_translation
-        description: Portuguese to English category names. Also available as a seed.
+        description: Portuguese-to-English product category names.

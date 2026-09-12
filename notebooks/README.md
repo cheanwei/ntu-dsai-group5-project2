@@ -1,26 +1,26 @@
 # Notebooks
 
-**Run `nbstripout --install` before opening any of these — every person, every
-clone.** Notebook JSON diffs on every cell execution and embeds outputs;
-without stripping, six people editing notebooks in one repo produces continuous
-merge conflicts (§10).
+Install the repository's output-stripping filter once per clone:
 
-    uv run nbstripout --install
-    uv run nbstripout --status     # confirm it took
+```bash
+uv run nbstripout --install
+uv run nbstripout --status
+```
 
-`.gitattributes` is committed, so `*.ipynb filter=nbstripout` reaches everyone
-on clone. The filter it names lives in `.git/config`, which does **not** get
-cloned — so each person must still run the install themselves. Skipping it
-raises no error; git silently passes the notebook through unstripped, and the
-first commit with outputs embedded starts the conflicts this rule exists to
-prevent.
+`.gitattributes` declares the filter, but the executable path is stored in
+local `.git/config` and is not copied by `git clone`.
 
-**One notebook per person — never a shared one.** The four here map to the four
-analyses in §9; if two people work the same area, fork a copy under your own
-name rather than editing in parallel.
+## Current notebooks
 
-**Notebooks do no cleaning (§6).** They read `olist_marts` through SQLAlchemy
-and nothing else — not `raw`, not `staging`. Cleaning here means each analyst
-gets different numbers, which is the whole argument for the warehouse.
+| Notebook | Status | Data source |
+|---|---|---|
+| `01_data_profiling.ipynb` | primary analysis | BigQuery marts via SQLAlchemy |
+| `02_sales_trends.ipynb` | exploratory prototype | local raw CSVs, with an experimental BigQuery write |
 
-Owner: lane B2, unblocked once staging exists.
+Notebook 01 contains the implemented profiling and business analysis. Notebook
+02 does not follow the platform's marts-only consumption rule and should be
+refactored before its results are treated as canonical.
+
+Keep cleaning and reusable business logic in dbt. Notebooks should query
+`*_marts`, aggregate in BigQuery, and use pandas only for small result sets and
+visualization.

@@ -1,29 +1,24 @@
 version: 2
 
-# Tier 1 tests (§7): unique + not_null on every primary key, accepted_values on
-# the enumerated columns. Cheap, structural, and they fail the build.
-# `description:` on every model and column is lane C1's deliverable — it renders
-# into the searchable catalog produced by `dbt docs generate`.
-
 models:
   - name: stg_customers
-    description: TODO(C1)
+    description: Customer records with source names preserved and zip prefixes kept as strings.
     columns:
       - name: customer_id
-        description: Per-order surrogate. Not the customer key — see stg_customers docs.
+        description: Order-level customer record identifier; not a stable customer key.
         data_tests: [unique, not_null]
       - name: customer_unique_id
-        description: TODO(C1)
+        description: Stable identifier used to group orders from the same customer.
         data_tests: [not_null]
 
   - name: stg_orders
-    description: TODO(C1)
+    description: One row per order with normalized lifecycle timestamps and status.
     columns:
       - name: order_id
-        description: TODO(C1)
+        description: Source order identifier.
         data_tests: [unique, not_null]
       - name: customer_id
-        description: TODO(C1)
+        description: Order-level customer record linked to `stg_customers`.
         data_tests:
           - not_null
           - relationships:
@@ -31,7 +26,7 @@ models:
                 to: ref('stg_customers')
                 field: customer_id
       - name: order_status
-        description: TODO(C1)
+        description: Current status recorded for the order.
         data_tests:
           - accepted_values:
               arguments:
@@ -39,10 +34,10 @@ models:
                          processing, created, approved]
 
   - name: stg_order_items
-    description: TODO(C1)
+    description: Order lines with product, seller, price, freight, and shipping deadline.
     columns:
       - name: order_id
-        description: TODO(C1)
+        description: Parent order identifier.
         data_tests:
           - not_null
           - relationships:
@@ -50,13 +45,13 @@ models:
                 to: ref('stg_orders')
                 field: order_id
       - name: price
-        description: TODO(C1)
+        description: Item price before freight.
         data_tests:
           - dbt_utils.expression_is_true:
               arguments:
                 expression: ">= 0"
       - name: freight_value
-        description: TODO(C1)
+        description: Freight charged for the order line.
         data_tests:
           - dbt_utils.expression_is_true:
               arguments:
@@ -67,10 +62,10 @@ models:
             combination_of_columns: [order_id, order_item_id]
 
   - name: stg_order_payments
-    description: TODO(C1)
+    description: Payment sequences recorded for each order.
     columns:
       - name: payment_type
-        description: TODO(C1)
+        description: Payment method used for the sequence.
         data_tests:
           - accepted_values:
               arguments:
@@ -81,44 +76,42 @@ models:
             combination_of_columns: [order_id, payment_sequential]
 
   - name: stg_order_reviews
-    description: >
-      TODO(C1). Deduplicated on review_id — the `unique` test below is the
-      assertion that the staging dedupe worked.
+    description: Reviews deduplicated by `review_id`, keeping the latest answer timestamp.
     columns:
       - name: review_id
-        description: TODO(C1)
+        description: Review identifier after staging deduplication.
         data_tests: [unique, not_null]
       - name: review_score
-        description: TODO(C1)
+        description: Customer score from 1 to 5.
         data_tests:
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "between 1 and 5"
 
   - name: stg_products
-    description: TODO(C1)
+    description: Product attributes with misspelled source columns renamed.
     columns:
       - name: product_id
-        description: TODO(C1)
+        description: Source product identifier.
         data_tests: [unique, not_null]
 
   - name: stg_sellers
-    description: TODO(C1)
+    description: One row per seller with its source city, state, and zip prefix.
     columns:
       - name: seller_id
-        description: TODO(C1)
+        description: Source seller identifier.
         data_tests: [unique, not_null]
 
   - name: stg_geolocation
-    description: TODO(C1)
+    description: Source coordinates at zip-prefix grain; duplicates remain for later reduction.
     columns:
       - name: geolocation_zip_code_prefix
-        description: TODO(C1)
+        description: Leading-zero-bearing Brazilian zip prefix stored as a string.
         data_tests: [not_null]
 
   - name: stg_product_category_translation
-    description: TODO(C1)
+    description: Portuguese-to-English product category mapping.
     columns:
       - name: product_category_name
-        description: TODO(C1)
+        description: Portuguese category name used by the products source.
         data_tests: [unique, not_null]

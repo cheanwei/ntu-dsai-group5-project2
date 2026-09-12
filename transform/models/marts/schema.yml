@@ -1,27 +1,21 @@
 version: 2
 
-# The only layer analysts are expected to query, and the only layer a
-# non-engineer sees in the BigQuery console (§15). Descriptions here carry the
-# most weight of anywhere in the project — lane C1.
-
 models:
   - name: dim_date
     description: "{{ doc('dim_date_overview') }}"
     columns:
       - name: date_key
-        description: TODO(C1)
+        description: Calendar date and primary key.
         data_tests: [unique, not_null]
 
   - name: dim_customer
     description: "{{ doc('dim_customer_overview') }}"
     columns:
       - name: customer_key
-        description: TODO(C1)
+        description: Stable customer key derived from `customer_unique_id`.
         data_tests: [unique, not_null]
     data_tests:
-      # The §12 guard: if this dimension ever reaches order-count rows, it has
-      # been keyed on the per-order surrogate and the customer analysis is
-      # meaningless.
+      # Guards against accidentally keying customers by the per-order ID.
       - dbt_utils.expression_is_true:
           arguments:
             expression: >
@@ -32,29 +26,27 @@ models:
     description: "{{ doc('dim_product_overview') }}"
     columns:
       - name: product_key
-        description: TODO(C1)
+        description: Product key derived from `product_id`.
         data_tests: [unique, not_null]
       - name: product_category_name_english
-        description: >
-          TODO(C1). Never null: ~610 uncategorised products map to an explicit
-          'unknown' member (§6).
+        description: English category name; missing categories use `unknown`.
         data_tests: [not_null]
 
   - name: dim_seller
     description: "{{ doc('dim_seller_overview') }}"
     columns:
       - name: seller_key
-        description: TODO(C1)
+        description: Seller key derived from `seller_id`.
         data_tests: [unique, not_null]
 
   - name: fct_order_items
     description: "{{ doc('fct_order_items_overview') }}"
     columns:
       - name: order_id
-        description: TODO(C1)
+        description: Parent order identifier.
         data_tests: [not_null]
       - name: customer_key
-        description: TODO(C1)
+        description: Stable customer key for the order.
         data_tests:
           - not_null
           - relationships:
@@ -62,27 +54,27 @@ models:
                 to: ref('dim_customer')
                 field: customer_key
       - name: product_key
-        description: TODO(C1)
+        description: Product sold on the order line.
         data_tests:
           - relationships:
               arguments:
                 to: ref('dim_product')
                 field: product_key
       - name: seller_key
-        description: TODO(C1)
+        description: Seller responsible for the order line.
         data_tests:
           - relationships:
               arguments:
                 to: ref('dim_seller')
                 field: seller_key
       - name: price
-        description: TODO(C1)
+        description: Item price before freight.
         data_tests:
           - dbt_utils.expression_is_true:
               arguments:
                 expression: ">= 0"
       - name: freight_value
-        description: TODO(C1)
+        description: Freight charged for the order line.
         data_tests:
           - dbt_utils.expression_is_true:
               arguments:
@@ -95,18 +87,16 @@ models:
   - name: fct_orders
     description: "{{ doc('fct_orders_overview') }}\n\n{{ doc('star_schema_design') }}"
     data_tests:
-      # Detect empty or partial loads while allowing normal variation in the
-      # static Olist extract (~99k orders).
       - dbt_expectations.expect_table_row_count_to_be_between:
           arguments:
             min_value: 90000
             max_value: 110000
     columns:
       - name: order_id
-        description: TODO(C1)
+        description: Source order identifier and primary key.
         data_tests: [unique, not_null]
       - name: customer_key
-        description: TODO(C1)
+        description: Stable customer key for the order.
         data_tests:
           - not_null
           - relationships:
@@ -114,14 +104,14 @@ models:
                 to: ref('dim_customer')
                 field: customer_key
       - name: order_status
-        description: TODO(C1)
+        description: Last status recorded for the order.
         data_tests:
           - accepted_values:
               arguments:
                 values: [delivered, shipped, canceled, unavailable, invoiced,
                          processing, created, approved]
       - name: order_purchase_date
-        description: TODO(C1)
+        description: Calendar date on which the order was placed.
         data_tests:
           - dbt_expectations.expect_column_values_to_not_be_null
           - dbt_expectations.expect_column_values_to_be_between:
@@ -133,7 +123,7 @@ models:
     description: "{{ doc('fct_payments_overview') }}"
     columns:
       - name: order_id
-        description: TODO(C1)
+        description: Parent order identifier.
         data_tests:
           - not_null
           - relationships:
@@ -141,22 +131,20 @@ models:
                 to: ref('fct_orders')
                 field: order_id
       - name: payment_type
-        description: TODO(C1)
+        description: Payment method used for the sequence.
         data_tests:
           - accepted_values:
               arguments:
                 values: [credit_card, boleto, voucher, debit_card, not_defined]
       - name: payment_value
-        description: TODO(C1)
+        description: Amount assigned to the payment sequence.
         data_tests:
           - dbt_expectations.expect_column_values_to_be_between:
               arguments:
                 min_value: 0
       - name: payment_installments
-        description: TODO(C1)
+        description: Number of installments recorded for the payment.
         data_tests:
-          # A high installment count is plausible but merits investigation,
-          # rather than blocking a build.
           - dbt_expectations.expect_column_values_to_be_between:
               arguments:
                 min_value: 1
@@ -172,17 +160,17 @@ models:
     description: "{{ doc('fct_reviews_overview') }}"
     columns:
       - name: review_id
-        description: TODO(C1)
+        description: Review identifier after staging deduplication.
         data_tests: [unique, not_null]
       - name: order_id
-        description: TODO(C1)
+        description: Reviewed order identifier.
         data_tests:
           - relationships:
               arguments:
                 to: ref('fct_orders')
                 field: order_id
       - name: review_score
-        description: TODO(C1)
+        description: Customer score from 1 to 5.
         data_tests:
           - dbt_utils.expression_is_true:
               arguments:
@@ -192,6 +180,6 @@ models:
                 value_set: [1, 2, 3, 4, 5]
                 quote_values: false
       - name: review_creation_date
-        description: TODO(C1)
+        description: Calendar date on which the review was created.
         data_tests:
           - dbt_expectations.expect_column_values_to_not_be_null

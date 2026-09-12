@@ -1,7 +1,7 @@
-import pandas as pd
-import streamlit as st
-import requests
 import folium
+import pandas as pd
+import requests
+import streamlit as st
 from streamlit_folium import st_folium
 
 BASE = f"http://localhost:{5001}"
@@ -35,4 +35,3 @@ st_data = st_folium(m, width=700, height=500)
 st.write("Map interaction:", st_data)
 m = folium.Map(location=(-14.235, -51.925), zoom_start=4, tiles="OpenStreetMap")
 st_data = st_folium(m, width=700, height=500)
-
