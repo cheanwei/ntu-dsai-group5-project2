@@ -17,12 +17,12 @@
           <mxGeometry x="820" y="110" width="300" height="530" as="geometry"/>
         </mxCell>
         <mxCell id="z5" value="&lt;b&gt;5 · CONSUMPTION&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
-          <mxGeometry x="1170" y="170" width="260" height="340" as="geometry"/>
+          <mxGeometry x="1170" y="170" width="260" height="470" as="geometry"/>
         </mxCell>
         <mxCell id="z6" value="&lt;b&gt;6 · DATA QUALITY&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 6;fillColor=none;strokeColor=#adb5bd;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#343a40;" vertex="1" parent="1">
           <mxGeometry x="560" y="425" width="210" height="215" as="geometry"/>
         </mxCell>
-        <mxCell id="title" value="&lt;b&gt;Olist Brazilian E-Commerce  ·  Data Platform Architecture&lt;/b&gt;&lt;br&gt;Kaggle CSVs → GCS raw zone → dlt → BigQuery (ELT via dbt) → analytics" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=14;fontColor=#212529;" vertex="1" parent="1">
+        <mxCell id="title" value="&lt;b&gt;Olist Brazilian E-Commerce  ·  Data Platform Architecture&lt;/b&gt;&lt;br&gt;Kaggle CSVs → GCS raw zone → dlt → BigQuery (ELT via dbt) → notebooks · Streamlit · Power BI" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=14;fontColor=#212529;" vertex="1" parent="1">
           <mxGeometry x="40" y="30" width="1390" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="kaggle" value="&lt;b&gt;Kaggle&lt;/b&gt;&lt;br&gt;olistbr/&lt;br&gt;brazilian-ecommerce&lt;br&gt;9 CSVs · ~120 MB&lt;br&gt;pinned by version" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#868e96;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
@@ -53,13 +53,19 @@
           <mxGeometry x="580" y="555" width="170" height="72" as="geometry"/>
         </mxCell>
         <mxCell id="nb" value="&lt;b&gt;Jupyter + pandas&lt;/b&gt;&lt;br&gt;SQLAlchemy&lt;br&gt;(sqlalchemy-bigquery)&lt;br&gt;sales · products · RFM" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
-          <mxGeometry x="1195" y="210" width="210" height="95" as="geometry"/>
+          <mxGeometry x="1195" y="200" width="210" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="streamlit" value="&lt;b&gt;Streamlit app&lt;/b&gt;&lt;br&gt;dashboards/dashboard.py&lt;br&gt;Flask API + folium map&lt;br&gt;self-serve exploration" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="1195" y="302" width="210" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="powerbi" value="&lt;b&gt;Power BI&lt;/b&gt;&lt;br&gt;native BigQuery connector&lt;br&gt;dashboards/powerbi/&lt;br&gt;executive KPI report" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
+          <mxGeometry x="1195" y="404" width="210" height="92" as="geometry"/>
         </mxCell>
         <mxCell id="dbtdocs" value="&lt;b&gt;dbt docs&lt;/b&gt;&lt;br&gt;lineage graph + catalog" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
-          <mxGeometry x="1195" y="320" width="210" height="68" as="geometry"/>
+          <mxGeometry x="1195" y="506" width="210" height="60" as="geometry"/>
         </mxCell>
         <mxCell id="gxdocs" value="&lt;b&gt;Dagster asset checks&lt;/b&gt;&lt;br&gt;pass/fail per asset" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#e6fcf5;strokeColor=#0ca678;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=10;fontColor=#212529;" vertex="1" parent="1">
-          <mxGeometry x="1195" y="403" width="210" height="68" as="geometry"/>
+          <mxGeometry x="1195" y="576" width="210" height="56" as="geometry"/>
         </mxCell>
         <mxCell id="dagster" value="&lt;b&gt;ORCHESTRATION — Dagster (software-defined assets)&lt;/b&gt;&lt;br&gt;dlt assets  →  @dbt_assets (one Dagster asset auto-generated per dbt model)  →  dbt tests as asset checks&lt;br&gt;`dagster dev` locally   ·   webserver + daemon in Docker Compose on a GCP e2-micro VM   ·   daemon holds the daily schedule&lt;br&gt;GitHub Actions builds and deploys the image; UI reached over an IAP tunnel (ingress is IAP-only)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#fff4e6;strokeColor=#e8590c;strokeWidth=2;align=center;verticalAlign=middle;spacingLeft=8;spacingRight=8;fontSize=11;fontColor=#212529;" vertex="1" parent="1">
           <mxGeometry x="40" y="700" width="1390" height="112" as="geometry"/>
@@ -86,6 +92,12 @@
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="f7" value="SQL" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="marts" target="nb">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f7b" value="SQL" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="marts" target="streamlit">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f7c" value="connector" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="marts" target="powerbi">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="f8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;jettySize=auto;strokeColor=#495057;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=10;fontColor=#495057;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="marts" target="dbtdocs">

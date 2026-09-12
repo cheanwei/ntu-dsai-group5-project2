@@ -253,8 +253,9 @@ html{scroll-behavior:smooth}
       <p class="fig-cap">Figure 1 — Layer flow</p>
       <pre>Kaggle CSVs → GCS raw zone → dlt → BigQuery → dbt (staging → intermediate → marts)
                                        ↓                        ↓
-                              Great Expectations        SQLAlchemy + pandas
-                                                          (Jupyter notebooks)
+                              dbt + dbt-expectations   ┌── SQLAlchemy + pandas (Jupyter)
+                                                       ├── Streamlit app (via Flask API)
+                                                       └── Power BI (import from marts)
 
               all of it orchestrated as Dagster software-defined assets</pre>
     </div>
@@ -269,7 +270,7 @@ html{scroll-behavior:smooth}
           <tr><td>Raw zone</td><td>Google Cloud Storage</td><td>Immutable, date-partitioned landing zone</td></tr>
           <tr><td>Ingestion</td><td>dlt</td><td>Typed load into BigQuery, idempotent</td></tr>
           <tr><td>Warehouse</td><td>BigQuery + dbt</td><td>Transform raw into a queryable dimensional model</td></tr>
-          <tr><td>Consumption</td><td>SQLAlchemy + pandas</td><td>Analysis, notebooks, exported charts</td></tr>
+          <tr><td>Consumption</td><td>SQLAlchemy + pandas; Streamlit; Power BI</td><td>Notebook analysis, an interactive app, an executive report — all reading <code>olist_marts</code> only</td></tr>
           <tr><td>Orchestration</td><td>Dagster</td><td>One lineage graph across all of the above</td></tr>
         </tbody>
       </table>
@@ -308,16 +309,20 @@ html{scroll-behavior:smooth}
             <td>Dependency resolution, testing, and documentation in one tool. Spark is unjustifiable at 120 MB and would be a red flag, not a strength. pandas transformations do not scale and cannot be tested declaratively.</td>
           </tr>
           <tr>
-            <td>Quality</td><td class="pick"><strong>dbt tests + Great Expectations</strong></td><td>Either alone</td>
-            <td>Two different jobs — see §7.</td>
+            <td>Quality</td><td class="pick"><strong>dbt tests + dbt-expectations</strong></td><td>A second assertion framework</td>
+            <td>Two tiers, one runner — see §7.</td>
           </tr>
           <tr>
             <td>Orchestration</td><td class="pick"><strong>Dagster</strong></td><td>Airflow; cron; GitHub Actions</td>
             <td>The pipeline <em>is</em> a graph of tables, which is exactly Dagster's asset model. <code>@dbt_assets</code> reads the dbt manifest and generates one Dagster asset per dbt model, so there is no second DAG definition to drift out of sync. Airflow would require hand-writing dependencies dbt already knows. Cron gives no lineage and no observability.</td>
           </tr>
           <tr>
-            <td>Analysis</td><td class="pick"><strong>SQLAlchemy + pandas</strong></td><td>Direct BigQuery client; Streamlit</td>
+            <td>Analysis</td><td class="pick"><strong>SQLAlchemy + pandas</strong></td><td>Direct BigQuery client</td>
             <td>Specified by the brief; keeps the warehouse swappable behind a dialect.</td>
+          </tr>
+          <tr>
+            <td>Dashboards</td><td class="pick"><strong>Streamlit + Power BI</strong></td><td>Looker Studio; a single surface; no dashboard at all</td>
+            <td>Two audiences with different failure modes under a live presentation: Power BI imports a snapshot for the headline numbers, Streamlit stays interactive for the geography. Neither is on the critical path, and both were started only after the spine was green — see §11.</td>
           </tr>
         </tbody>
       </table>
@@ -554,7 +559,7 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
     </ul>
     <p>Cheap, schema-level, and they fail the build.</p>
 
-    <h3>Tier 2 — Great Expectations (after marts, business invariants)</h3>
+    <h3>Tier 2 — dbt-expectations (after marts, business invariants)</h3>
     <ol class="body-list">
       <li><strong>Payment reconciliation.</strong> Per order, <code>sum(payment_value)</code> versus <code>sum(price + freight_value)</code> within tolerance. Expect ≥99% to pass; investigate and <em>document</em> the residual rather than suppressing it — vouchers and partial payments produce genuine mismatches.</li>
       <li><strong>Date monotonicity.</strong> <code>purchase ≤ approved ≤ carrier handover ≤ delivered</code>. Known violations exist in the source; quantify them.</li>
@@ -563,7 +568,13 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
       <li><strong>Distribution checks.</strong> Mean <code>review_score</code> plausible; monthly order volume non-zero across the window.</li>
     </ol>
 
-    <p><strong>Why both.</strong> dbt tests are fast and structural — they belong inline in every build. GX handles cross-table and statistical assertions dbt expresses awkwardly, and it emits <strong>Data Docs</strong>, a browsable HTML quality report. That artifact is concrete evidence for the documentation criterion in a way that <code>dbt test</code> console output is not.</p>
+    <p>Tier 2 lives in <code>transform/</code>: generic tests beside the column they guard in <code>models/marts/schema.yml</code>, and singular tests in <code>tests/</code> for the assertions that span two facts, such as the payment reconciliation.</p>
+
+    <p><strong>Why one tool and not two.</strong> The tiers differ in what they assert, not in what runs them. <code>dbt_expectations</code> supplies the Great Expectations-style macros — distributions, row-count bands, column-pair comparisons — that plain dbt expresses awkwardly, so tier 2 needs no second framework, no second datasource configuration, and no second place to look when something fails. Both tiers run in one <code>dbt build</code>, which is already a node in the asset graph, so a tier-2 failure stops the marts the same way a tier-1 failure does.</p>
+
+    <p>It also gets the attribution this section wanted for free: <strong>dagster-dbt models every dbt test as an asset check</strong>, so a failing payment reconciliation lands on <code>fct_orders</code> rather than on a nameless task. That needed hand-written <code>@asset_check</code> wrappers under the previous design; here it is the default, and <code>enable_source_tests_as_checks</code> extends it to the raw tables.</p>
+
+    <p><strong>What this gives up.</strong> Great Expectations emits <strong>Data Docs</strong>, a browsable HTML quality report, and nothing here replaces that artifact. Test <em>definitions</em> are published in the dbt docs site; pass/fail shows in the Dagster UI as asset checks and in the Actions run. If a standalone HTML quality report is wanted later, generate it from <code>run_results.json</code> rather than reinstating a second assertion framework.</p>
   </section>
 
   <section id="s-8">
@@ -573,13 +584,12 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
 
     <div class="fig">
       <p class="fig-cap">Figure 3 — Asset graph</p>
-      <pre>kaggle_dataset          (asset: download at pinned version → GCS)
-  └→ gcs_raw_files      (asset: 9 CSVs under ingest_date=…)
-       └→ dlt assets    (9, one per source table → olist_raw)
-            └→ dbt staging assets      (9)   ┐
-                 └→ dbt intermediate    (4)  │ auto-generated from the
-                      └→ dbt marts      (8)  ┘ dbt manifest via @dbt_assets
-                           └→ gx_validation   (asset check)
+      <pre>kaggle_dataset          (asset: download at pinned version → GCS)   ┐ daily_refresh
+  └→ gcs_raw_files      (asset: 9 CSVs under ingest_date=…)         │ schedule, cron
+       └→ dlt assets    (9, one per source table → olist_raw)       ┘ 08:00 SGT
+            └→ dbt staging assets      (9)   ┐ @dbt_assets, from the manifest
+                 └→ dbt intermediate    (4)  │ automation_conditions sensor,
+                      └→ dbt marts      (8)  ┘ eager on the load above
                                 └→ analytics_extract  (optional, §11)</pre>
     </div>
 
@@ -587,61 +597,87 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
       <li><code>@dbt_assets</code> generates one Dagster asset per dbt model from the manifest, so lineage stays truthful without a hand-maintained parallel DAG.</li>
       <li><code>dagster-dlt</code>'s <code>DagsterDltResource</code> wraps the ingestion pipeline.</li>
       <li>GX results surface as Dagster <strong>asset checks</strong>, so a quality failure shows up against the asset that produced it rather than as an unrelated task failure.</li>
-      <li>Schedule: daily, 02:00 SGT.</li>
     </ul>
 
-    <h3>Where Dagster runs</h3>
-    <p><strong>Dagster is not hosted.</strong> The <code>dagster-daemon</code> is what makes schedules fire, so an unattended schedule requires an always-on process — and that is the entire cost of hosting it. GCP's always-free <code>e2-micro</code> has 1 GB of RAM, which the webserver, daemon, dbt, and dlt will exhaust; anything larger is real money and an extra machine to maintain during the final week. Cloud Run is request-scoped and would drag in Cloud SQL for run storage. Dagster+ is a commercial product adding an account and agent setup for no grading benefit. <span class="no-xref">The brief's §6</span> is optional and names GitHub Actions as acceptable.</p>
+    <p><strong>Two triggers, and the boundary between them is the point.</strong> Nothing external announces a change to the Kaggle dump, so ingestion is <em>pulled</em> on a cron: <code>daily_refresh</code> materialises the ingestion group — Kaggle → GCS → <code>olist_raw</code> — at 08:00 SGT. The load finishing, by contrast, <strong>is</strong> an event this system emits. So the dbt layer is not scheduled at all. Every model carries <code>AutomationCondition.eager()</code> (<code>orchestration/assets.py</code>), and the <code>automation_conditions</code> sensor (<code>orchestration/sensors.py</code>) requests a build when the raw tables it reads have actually been reloaded.</p>
 
-    <p><code>orchestration/definitions.py</code> remains the single source of truth, executed two ways:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Kind</th><th>Fires</th><th>Materialises</th></tr></thead>
+        <tbody>
+          <tr><td><code>daily_refresh</code></td><td>schedule</td><td>08:00 SGT</td><td><code>kaggle_dataset</code> → <code>gcs_raw_files</code> → the 9 raw tables</td></tr>
+          <tr><td><code>automation_conditions</code></td><td>sensor</td><td>when that load lands</td><td>the 21 dbt models, per model</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Both are held by the daemon on <code>dagster-vm</code> (below), and both default to <code>RUNNING</code> so that a fresh <code>DAGSTER_HOME</code> does not silently start with the pipeline switched off.</p>
+
+    <p>The reason to split them rather than run one cron over <code>AssetSelection.all()</code>: under a single cron, dbt runs whether or not the load succeeded. An ingestion failure at 08:00 would rebuild the marts on yesterday's raw tables and report a green dbt run beside a red one. Under a condition, the trigger is the load completing, so a failed ingestion produces no dbt run at all and the marts hold their last good state. The dependency edge does the work that an <code>if</code> in a task DAG would otherwise have to.</p>
+
+    <p>This is also the honest answer to the objection in §12 that scheduling a static dataset is cargo-culting. The cron over a fixed dump genuinely performs no new work; the <em>event-driven</em> half is the part that would be identical against a partner dropping a file or an hourly export, and it is structural rather than asserted.</p>
+
+    <h3>Where Dagster runs</h3>
+    <p><strong>Dagster is hosted, on one always-free machine.</strong> The <code>dagster-daemon</code> is what makes a schedule fire and a sensor tick, so both triggers above need a process that is alive at 08:00 and still alive when a load finishes. That process is a <strong>two-service Docker Compose deployment on a GCP <code>e2-micro</code></strong> (<code>orchestration/deploy/</code>): webserver and daemon, each loading the code location in-process, sharing a bind-mounted <code>DAGSTER_HOME</code> backed by SQLite. Roughly 450–550 MB resident, on a 1 GB machine with 2 GB of swap behind it.</p>
+
+    <p>The fit is bought, not lucky. Dagster's reference Compose deployment is five moving parts and 1.5–2.5 GB at peak, which rules out the only free host; dropping three of them is what makes an <code>e2-micro</code> viable, and the trade is set out below. The alternatives were weighed and rejected on the same arithmetic: Cloud Run is request-scoped and would drag in Cloud SQL for run storage, and Dagster+ is a commercial product adding an account and agent setup for no grading benefit.</p>
+
+    <p><code>orchestration/definitions.py</code> remains the single source of truth, executed three ways:</p>
 
     <div class="table-wrap">
       <table>
         <thead><tr><th>Context</th><th>Command</th><th>Purpose</th></tr></thead>
         <tbody>
           <tr><td>Development and demo</td><td><code>dagster dev</code></td><td>Webserver on <code>localhost:3000</code> plus daemon. Materialise assets, inspect lineage, demo live. The asset graph screenshot is the strongest visual available for the Technical Overview slide</td></tr>
-          <tr><td>Scheduled execution</td><td>GitHub Actions cron → <code>dagster.materialize(...)</code> in-process</td><td>A genuinely running daily schedule, free, with no infrastructure and no daemon</td></tr>
+          <tr><td>Production</td><td>webserver + daemon on <code>dagster-vm</code> (<code>docker-compose.vm.yml</code>)</td><td>Holds both triggers. Run history is durable here, and the UI is reachable over IAP</td></tr>
+          <tr><td>One-shot, and CI</td><td><code>run_all.py</code></td><td>Materialises the graph in-process, ignoring both triggers. The path a developer and the reports workflow take</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>The daemon <em>is</em> the scheduler; once GitHub Actions holds that role, production does not need it. The service-account JSON and Kaggle credentials live in GitHub Actions secrets, never in the repository.</p>
-    <p>Report this as the deliberate simplification it is: the production path would be Dagster+ or a container on GKE.</p>
+    <p>The VM has a public IP and is not reachable on it: the address carries egress to <code>kaggle.com</code>, while ingress on 22 and 3002 is allowed only from IAP's <code>35.235.240.0/20</code>. The service-account JSON and Kaggle credentials live in GitHub Actions secrets and are delivered to the VM by the deploy workflow — never in the repository, never baked into the image.</p>
 
-    <h3>Reading pipeline reports without a daemon</h3>
-    <p>A GitHub Actions runner is destroyed after each job, and Dagster's own documentation is explicit: with <code>DAGSTER_HOME</code> unset, the instance uses a temporary directory <em>cleared on process exit</em>. Run history and materialization records therefore do not survive a scheduled run. This must be designed for rather than discovered.</p>
-    <p>Four distinct artifacts are conflated under "reports", and only one needs Dagster:</p>
+    <p><strong><code>.github/workflows/pipeline.yml</code> holds no cron.</strong> It is a reports-only workflow, run on demand to publish the dbt docs site to Pages. Two schedulers materialising the same assets at the same instant would race on the same BigQuery tables, and a race whose cause is a workflow trigger is one nobody would attribute correctly; <code>tests/test_orchestration_definitions.py</code> asserts the cron stays absent.</p>
+
+    <p>State the limit that remains rather than waiting for it in Q&amp;A: this is one machine, unreplicated, with the daemon both launching and executing every run. A container restart kills whatever is materialising. That is acceptable for a project deployment and is the first thing to revisit if this were ever run for real, where the answer is Dagster+ or a container on GKE.</p>
+
+    <h3>Run history and published reports</h3>
+    <p>Four distinct artifacts are conflated under "reports", and they do not live in the same place or survive the same failures:</p>
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Question</th><th>Answer lives in</th><th>Survives an ephemeral run</th></tr></thead>
+        <thead><tr><th>Question</th><th>Answer lives in</th><th>Durable</th></tr></thead>
         <tbody>
-          <tr><td>Did the pipeline run and pass?</td><td>Actions run log and status badge</td><td>Yes</td></tr>
+          <tr><td>Did the pipeline run and pass?</td><td>Dagster run log on <code>dagster-vm</code>; Actions log for the reports workflow</td><td>Yes</td></tr>
           <tr><td>What did dbt do — models, timings, tests?</td><td><code>target/run_results.json</code>, dbt docs</td><td>Only if exported</td></tr>
-          <tr><td>Did quality checks pass, and what failed?</td><td>GX Data Docs HTML</td><td>Only if exported</td></tr>
-          <tr><td>Which assets materialised when, historically?</td><td>Dagster instance storage</td><td class="no"><strong>No</strong></td></tr>
+          <tr><td>Did quality checks pass, and what failed?</td><td>Dagster asset checks; <code>run_results.json</code></td><td>Only if exported</td></tr>
+          <tr><td>Which assets materialised when, historically?</td><td>Dagster instance storage on the VM</td><td>Yes — SQLite under <code>DAGSTER_HOME</code>, across redeploys and reboots</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p><strong>Publish the static reports (required).</strong> GX Data Docs and <code>dbt docs</code> are static HTML. The workflow uploads them as artifacts with <code>if: always()</code> — they matter most when a run fails — and deploys them to <strong>GitHub Pages</strong>, yielding permanent URLs citable from the report and the deck. A published quality report is materially stronger evidence for the documentation criterion than a screenshot.</p>
+    <p>The last row is the one the hosting decision buys. A GitHub Actions runner is destroyed after each job, and with <code>DAGSTER_HOME</code> unset Dagster uses a temporary directory <em>cleared on process exit</em> — so under the Actions-as-scheduler topology no materialisation record survived the run that wrote it. The VM's bind-mounted <code>DAGSTER_HOME</code> is the one thing that arrangement could not provide, and the sensor needs it: automation conditions are evaluated against materialisation history and the sensor's own cursor, both of which live in instance storage. An instance cleared on process exit has neither, so there is no "since the last load" for a condition to be true of.</p>
 
-    <p><strong>Run history is local, and deliberately stops there.</strong> Set <code>DAGSTER_HOME</code> and Dagster's default storage takes over: SQLite under <code>history/</code> for run and event records, <code>storage/</code> for compute logs, both gitignored. <code>orchestration/dagster.yaml</code> therefore carries no <code>storage:</code> block at all — omitting it <em>is</em> the choice. That costs nothing, provisions nothing, and covers the two places history is actually read: <code>dagster dev</code> on a laptop during development and the demo, and the console in <code>deploy/</code> (below).</p>
-    <p><strong>Shared history was considered and rejected.</strong> Dagster's only alternatives to SQLite are Postgres and MySQL, so one instance readable from both CI and every laptop means hosting a database — a free-tier Supabase project was the obvious candidate. Against it: a second stateful service to own, credentials to distribute to six people, and a free tier that pauses on inactivity so a scheduled run needs a retry to wake it — all to produce evidence the brief does not ask for and that the published reports already cover more durably. §3 rejects Postgres as the warehouse; re-admitting it to hold instance metadata is not a better trade.</p>
+    <p><strong>Publish the static reports (required).</strong> The <code>dbt docs</code> site is static HTML. The workflow uploads them as artifacts with <code>if: always()</code> — they matter most when a run fails — and deploys them to <strong>GitHub Pages</strong>, yielding permanent URLs citable from the report and the deck. A published quality report is materially stronger evidence for the documentation criterion than a screenshot.</p>
+
+    <p><strong>Run history is durable but not shared, and deliberately stops there.</strong> Set <code>DAGSTER_HOME</code> and Dagster's default storage takes over: SQLite under <code>history/</code> for run and event records, <code>storage/</code> for compute logs, both gitignored. <code>orchestration/dagster.yaml</code> therefore carries no <code>storage:</code> block at all — omitting it <em>is</em> the choice. That costs nothing, provisions nothing, and covers the two places history is actually read: the VM's UI over IAP, and <code>dagster dev</code> on a laptop during development and the demo. Those are two separate instances with separate histories, which is the trap to know about before wondering why a laptop shows no scheduled runs.</p>
+
+    <p><strong>Shared history was considered and rejected.</strong> Dagster's only alternatives to SQLite are Postgres and MySQL, so one instance readable from the VM and every laptop means hosting a database — a free-tier Supabase project was the obvious candidate. Against it: a second stateful service to own, credentials to distribute to six people, and a free tier that pauses on inactivity so a scheduled run needs a retry to wake it — all to produce evidence the brief does not ask for and that the published reports already cover more durably. §3 rejects Postgres as the warehouse; re-admitting it to hold instance metadata is not a better trade.</p>
 
     <div class="note warn">
-      <span class="note-label">Stated in the report rather than discovered in Q&amp;A</span>
-      <p>Run history from scheduled runs is ephemeral by design, because the orchestrator is not hosted and the runner is destroyed after each job. The durable evidence is the published Data Docs and dbt docs. A deliberately chosen and documented limitation reads as engineering judgement; the same limitation surfaced by a marker's question does not.</p>
+      <span class="note-label">The consequence, stated in the report rather than discovered in Q&amp;A</span>
+      <p>Scheduled-run history is durable, and it is durable in exactly one place. It is not replicated, not backed up, and not readable from a laptop or a CI runner — so the evidence cited in the report and the deck is the published dbt docs, which have permanent URLs, and the run history is what the demo shows live.</p>
     </div>
 
     <div class="note warn">
       <span class="note-label">Stated honestly in the report</span>
-      <p>The dataset is a static dump ending October 2018, so a daily schedule performs no new work. The pipeline is <em>built</em> for incremental arrival — idempotent replace loads, a date-partitioned raw zone, incremental-ready marts — and demonstrating that on a static dataset is a deliberate simplification. Presenting a daily refresh as if it did real work would not survive Q&amp;A.</p>
+      <p>The dataset is a static dump ending October 2018, so a daily cron performs no new work. The pipeline is <em>built</em> for incremental arrival — idempotent replace loads, a date-partitioned raw zone, incremental-ready marts, and a transform layer triggered by arrival rather than by the clock — and demonstrating that on a static dataset is a deliberate simplification. Presenting a daily refresh as if it did real work would not survive Q&amp;A; presenting the <em>mechanism</em> as the deliverable it is, does.</p>
     </div>
 
-    <h3>Docker Compose considered</h3>
-    <p>Compose is a packaging format, not a host. It describes how processes are assembled; it does not answer where they stay running, which is the entire question above. The daemon still needs an always-on machine, and that machine is still the whole cost.</p>
-    <p>It also makes the hosting arithmetic worse rather than better. Dagster's reference Compose deployment is four long-lived services — Postgres, a user-code gRPC container, the webserver, and the daemon — plus two Dockerfiles, a <code>workspace.yaml</code>, and <code>/var/run/docker.sock</code> mounted into the webserver and daemon. With <code>DAGSTER_CURRENT_IMAGE</code> set, the run launcher starts a <em>further</em> container for each run.</p>
+    <h3>Why not Dagster's reference Compose deployment</h3>
+    <p>Compose is a packaging format, not a host. It describes how processes are assembled; it does not answer where they stay running, and the always-on machine is the whole cost either way — which is why the choice above is a VM rather than a <code>docker-compose.yml</code>.</p>
+
+    <p>Adopting Dagster's <em>reference</em> topology on top of that would have made the arithmetic worse rather than better. It is four long-lived services — Postgres, a user-code gRPC container, the webserver, and the daemon — plus two Dockerfiles, a <code>workspace.yaml</code>, and <code>/var/run/docker.sock</code> mounted into the webserver and daemon. With <code>DAGSTER_CURRENT_IMAGE</code> set, the run launcher starts a <em>further</em> container for each run.</p>
 
     <div class="table-wrap">
       <table>
@@ -657,11 +693,20 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
     </div>
 
     <p>Roughly 1.5–2.5 GB at peak. The always-free <code>e2-micro</code> has 1 GB, so a topology adopted to make hosting easier in fact rules out the only free host. A comfortable <code>e2-medium</code> is about $25–35 per month — real money, and a machine to patch during the final week.</p>
-    <p><strong>It does not recover shared history either.</strong> Whatever Compose starts is local to the machine that ran <code>docker compose up</code>, and the GitHub Actions runner cannot reach it, so scheduled-run history is no more durable for its existence. Compose is orthogonal to that question rather than an answer to it — and the question was already settled above, in the negative.</p>
+
+    <p><strong>It does not make history shared either.</strong> Whatever Compose starts is local to the machine that ran <code>docker compose up</code>; a Postgres service in the same file is reachable from that host and nowhere else. The durability the deployment delivers comes from the bind-mounted <code>DAGSTER_HOME</code> surviving the container, not from the database engine underneath it — which is why the slim version gives up Postgres without giving up the row that mattered in the table above.</p>
+
     <p><strong>The reproducibility case is weaker than it looks.</strong> Containers earn their cost where there are system-level dependencies — compilers, geospatial libraries, a JVM. This stack is pure pip (dlt, dbt-bigquery, Dagster, pandas) with the heavy compute pushed into BigQuery, so a pinned <code>pyproject.toml</code> and a lockfile recover most of the same guarantee. Against that: Docker Desktop installs across six machines, ARM-versus-x86 wheel surprises on M-series Macs, mounting the service-account JSON without leaking it, and a <code>dbt run</code> loop that is slower in a container than in a virtualenv — a cost Lane A2 pays daily through week 2, while Lane C, which installs nothing by design (§15), gains nothing.</p>
-    <p><strong>What is worth building, in week 3.</strong> A deliberately slim <strong>two-service</strong> Compose file — webserver and daemon only — sharing a bind-mounted <code>DAGSTER_HOME</code> so the UI reads the same local SQLite history <code>dagster dev</code> writes. No database service, no gRPC code-location container, no <code>docker.sock</code>.</p>
-    <p>It buys one thing, and the file should not claim more: §8's closing assertion that the production path would be Dagster+ or a container on GKE becomes something a marker can read — cheap evidence for the architecture criterion. The image carries <code>dagster</code> and <code>dagster-webserver</code> only, not dbt/dlt/pandas, so it loads no code location; it is a history console and a topology demonstration, not a way to run the pipeline.</p>
-    <p>Scheduled for week 3 alongside the docs publishing, never week 1, where it would compete with the critical path.</p>
+
+    <p><strong>What was built instead.</strong> A deliberately slim <strong>two-service</strong> Compose file — webserver and daemon, each loading the code location itself — sharing a bind-mounted <code>DAGSTER_HOME</code>, so the UI reads the same SQLite history the daemon writes. No database service, no gRPC code-location container, no <code>docker.sock</code>: two of the reference deployment's five moving parts, and the reason 450–550 MB fits where 1.5–2.5 GB does not. The cost of dropping the code server is that the daemon both launches and hosts every run — Dagster's default run coordinator is the queued one, so even a run submitted in the UI is executed by the daemon beside its own copy of the code — which makes the daemon a single point of failure and a container restart fatal to whatever is running.</p>
+
+    <p>It also concentrates a second responsibility there. The daemon does not merely fire the 08:00 cron; it evaluates the <code>automation_conditions</code> sensor, which is the only thing that builds the dbt layer now that the schedule covers ingestion alone. Stopping that service to reclaim memory does not delay the daily run, it leaves the marts unbuilt indefinitely while ingestion keeps reporting green.</p>
+
+    <p>The revision from the <em>console</em> originally planned here was made deliberately, and it changes what the file buys. An image carrying only <code>dagster</code> and <code>dagster-webserver</code> cannot load a code location, so it could show history but never materialise an asset — and <code>dagster-webserver</code> will not even start without a target unless told the empty workspace is intended. Putting the project's own dependencies and code in the image makes it <em>run</em> the pipeline instead: a run launched from the UI or ticked by the daemon does what <code>dagster dev</code> and the CI workflow do, with the service-account key bind-mounted rather than baked in.</p>
+
+    <p>The cost is honest and bounded: the image is ~1.5 GB because it carries dbt, dlt, GX and pandas, and a run against it spends real Kaggle bandwidth and real BigQuery. §8's closing assertion — that the production path would be Dagster+ or a container on GKE — stops being an assertion either way; it is now backed by a container that has actually run the graph rather than one that only draws it.</p>
+
+    <p>Built in week 3 alongside the docs publishing, never week 1, where it would have competed with the critical path. <code>orchestration/deploy/provision_vm.sh</code> stands the machine up; <code>.github/workflows/deploy-dagster.yml</code> builds the image, pushes it to Artifact Registry pinned to a commit SHA, and restarts the two services.</p>
   </section>
 
   <section id="s-9">
@@ -704,7 +749,7 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
 ├── ingestion/                                                               # A1
 │   ├── kaggle_to_gcs.py               # kagglehub → unzip → GCS  (§4)
 │   ├── olist_source.py                # dlt source, fixed schema from config.yml
-│   └── pipeline.py                    # dlt pipeline → olist_raw
+│   └── gcs_to_bigquery.py             # dlt pipeline → olist_raw
 ├── transform/                         # dbt project                          # A2
 │   ├── dbt_project.yml
 │   ├── profiles.yml                   # location: US, dev_&lt;name&gt; targets
@@ -714,32 +759,38 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
 │   │   └── marts/                     # 8 models + schema.yml                  C1
 │   ├── macros/
 │   ├── seeds/                         # product_category_name_translation
-│   └── tests/                         # singular tests                         B1
-├── quality/                                                                 # B1
-│   └── great_expectations/
-│       └── uncommitted/data_docs/     # generated; gitignored, published to Pages
+│   └── tests/                         # singular tests — tier 2 (§7)           B1
 ├── orchestration/                                                           # A1
 │   ├── definitions.py                 # single source of truth for the graph
-│   ├── assets.py                      # kaggle→gcs, dlt, @dbt_assets, gx check
+│   ├── assets.py                      # kaggle→gcs, dlt, @dbt_assets
 │   ├── resources.py
-│   ├── schedules.py                   # declares intent; GH Actions fires it
+│   ├── schedules.py                   # daily_refresh: cron, ingestion only (§8)
+│   ├── sensors.py                     # automation_conditions: dbt on the load (§8)
 │   ├── dagster.yaml                   # local SQLite instance, no DB (§8)
-│   └── run_all.py                     # materialize() entrypoint for CI
-├── deploy/                            # stretch, week 3 only  (§8)            # A1
-│   ├── docker-compose.yml             # webserver + daemon, bind-mounted home
-│   └── Dockerfile                     # dagster-webserver only
+│   ├── run_all.py                     # the single entrypoint: laptop and CI
+│   └── deploy/                        # the hosted daemon on dagster-vm (§8)
+│       ├── docker-compose.yml         # webserver + daemon, bind-mounted home
+│       ├── docker-compose.vm.yml      # the hosted variant: pulls a pinned SHA
+│       ├── provision_vm.sh            # the machine, the firewall, IAP ingress
+│       └── Dockerfile                 # project deps; runs the pipeline
 ├── notebooks/                         # one per person, nbstripout installed    B2
+├── dashboards/                        # the two consumption surfaces (§11)
+│   ├── api.py                         # Flask API in front of olist_marts       B2
+│   ├── dashboard.py                   # Streamlit app: folium city map          B2
+│   ├── streamlit/                     # app assets
+│   └── powerbi/                       # .pbix — executive KPI report            C2
 ├── docs/
 │   ├── architecture-design.md         # this file
 │   └── diagrams/                      # draw.io + Excalidraw, generated
 └── .github/
     └── workflows/
-        └── pipeline.yml               # cron → run_all.py → artifacts → Pages  A1</pre>
+        ├── pipeline.yml               # on demand → run_all.py → Pages         A1
+        └── deploy-dagster.yml         # build image → deploy to the VM          A1</pre>
     </div>
 
     <div class="note warn">
       <span class="note-label">First commit, no exceptions</span>
-      <p><code>.gitignore</code> must exist in the first commit, covering <code>*.json</code>, <code>.env</code>, <code>transform/target/</code>, and <code>great_expectations/uncommitted/</code>. A service-account key committed to history is laborious to expunge and is precisely the kind of lapse the code-quality criterion penalises. All credentials — <code>GCP_SA_KEY</code>, <code>GCP_PROJECT</code>, <code>KAGGLE_USERNAME</code>, and <code>KAGGLE_KEY</code> — live in GitHub Actions secrets and in each developer's local <code>.env</code>. Dagster contributes none: it holds no database credentials to leak.</p>
+      <p><code>.gitignore</code> must exist in the first commit, covering <code>*.json</code>, <code>.env</code>, <code>transform/target/</code>, and <code>transform/dbt_packages/</code>. A service-account key committed to history is laborious to expunge and is precisely the kind of lapse the code-quality criterion penalises. All credentials — <code>GCP_SA_KEY</code>, <code>GCP_PROJECT</code>, and <code>KAGGLE_API_TOKEN</code> — live in GitHub Actions secrets and in each developer's local <code>.env</code>. Dagster contributes none: it holds no database credentials to leak.</p>
     </div>
 
     <p>The brief requires a <strong>single main branch</strong>. Read as a description of the repo's final state — all work on main, nothing stranded on side branches — rather than a prohibition on pull requests. With six contributors, short-lived branches merged via PR are safer and add code review, which serves the code-quality criterion. If the requirement is meant literally, fall back to small frequent commits and a pinned issue tracking who is editing what.</p>
@@ -754,12 +805,35 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
   <section id="s-11">
     <span class="sec-no">§ 11</span>
     <h2>Out of scope, and stretch goals</h2>
-    <p><strong>A dashboard is a conditional stretch goal, not a component.</strong> No dashboard is a required deliverable, and none advances the four focus criteria directly.</p>
-    <p>If one is built, use <strong>Looker Studio</strong>, not Streamlit. Looker Studio connects to BigQuery natively, requires no code, costs nothing, and can be owned end to end by a non-engineering team member (§15) while the engineers stay on the critical path. Streamlit's real cost is engineering hours diverted from the pipeline; Looker Studio's is close to zero of them.</p>
-    <p>Streamlit remains defensible only if a team member specifically wants the engineering practice and the pipeline is already complete and green. In that case it must read a <strong>pre-aggregated Parquet or DuckDB extract</strong> materialised by a Dagster asset — never live BigQuery, which turns every widget interaction into a query job and puts a network dependency in the middle of a timed presentation. Three or four pages maximum.</p>
-    <p>Either way, it is framed in the deck as evidence that the marts are consumable without SQL.</p>
-    <p>The second stretch goal is the two-service Compose file in <code>deploy/</code> (§8), which turns the claim that this would run as a container in production into something a marker can read. It depends on nothing else — the Dagster instance it reads is local SQLite — and is worth roughly two hours in week 3, or none at all.</p>
-    <p>Persistent <em>shared</em> run history is not a stretch goal; it is out of scope, and §8 gives the reasoning.</p>
+    <p><strong>The dashboard stretch goal was taken, and taken twice.</strong> §1 scoped dashboards out and this section previously argued they should stay out. That decision was reversed once the pipeline spine was complete and green — the precondition the earlier draft itself set. <code>dashboards/</code> now holds two consumers of <code>olist_marts</code>, aimed at two different audiences.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Surface</th><th>Audience</th><th>Reads</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Streamlit</strong> — <code>dashboards/dashboard.py</code></td><td>Anyone who wants to interrogate the data without writing SQL</td><td>A Flask API (<code>dashboards/api.py</code>) sitting in front of the marts</td></tr>
+          <tr><td><strong>Power BI</strong> — <code>dashboards/powerbi/</code></td><td>The executive audience of the deck</td><td>An import-mode extract of the marts, refreshed on demand</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Neither is on the critical path, neither is a graded deliverable, and both are framed in the deck exactly as the original stretch goal would have been: evidence that the marts are consumable without SQL.</p>
+
+    <p><strong>Why two surfaces rather than one.</strong> They are not redundant, because they fail differently under the constraint that actually matters — a live, timed presentation. Power BI carries the headline numbers, and an import-mode extract means the report renders from a local snapshot with no network call and no query job at all. Streamlit carries the interactive geography (a <code>folium</code> map of revenue by city), where the entire point is that the audience can ask for a cut nobody prepared in advance. A single surface would have to be either safe or interactive; two can be both.</p>
+
+    <p><strong>Why Streamlit rather than Looker Studio.</strong> The earlier draft preferred Looker Studio because it is code-free, connects to BigQuery natively, and can be owned end to end by a non-engineering member (§15) while the engineers stay on the critical path. That reasoning was sound and it lost to two facts. Power BI now occupies the no-code executive slot, so the second surface has no reason to be no-code as well — which converts Streamlit's cost, engineering hours, into the thing that distinguishes it. And the map is the part of the analysis worth showing interactively: <code>streamlit-folium</code> renders it in a few lines, whereas Looker Studio's geo chart does not carry Brazilian municipal geography and would need it supplied.</p>
+
+    <p><strong>The constraint that survived the reversal.</strong> The earlier draft's real argument was never about tooling — it was that no dashboard may put a per-interaction query job between a widget and the audience. That still holds, and both surfaces respect it by different means: Power BI imports rather than using DirectQuery, and Streamlit goes through the Flask API rather than opening a BigQuery session on every rerun. The pre-aggregated Parquet or DuckDB extract the earlier draft demanded is one way to honour that rule; these are two others. What would break it is widening the API past the marts, or pointing either surface at <code>staging</code> — both of which also violate the rule in §9 that consumers read <code>olist_marts</code> only.</p>
+
+    <div class="note warn">
+      <span class="note-label">Current state</span>
+      <p><code>dashboard.py</code> calls <code>/api/cities</code>, and <code>api.py</code> does not serve that endpoint yet — it still carries the scaffold routes. The seam is in the right place; the endpoint behind it is the one open item in this section. <code>dashboards/powerbi/</code> is likewise an empty directory awaiting the <code>.pbix</code>.</p>
+    </div>
+
+    <p>The second stretch goal, the Compose deployment in <code>orchestration/deploy/</code> (§8), was built. It is no longer a claim that this <em>would</em> run as a container in production: the daemon on <code>dagster-vm</code> holds both triggers, and the marts are built by a container that has actually run the graph rather than one that only draws it.</p>
+
+    <p>Persistent <em>shared</em> run history is still not a stretch goal; it is out of scope, and §8 gives the reasoning. Durable history and <em>shared</em> history are different things, and only the first was in reach.</p>
+
     <p>Also out of scope: streaming ingestion, ML models, reverse ETL, and dbt snapshots (the source has no change history to capture).</p>
   </section>
 
@@ -774,10 +848,11 @@ marts/          dim_date, dim_customer, dim_product, dim_seller,
           <tr><td>Truncated Oct 2018 tail read as a revenue collapse</td><td class="no">Credibility loss in Q&amp;A</td><td>Annotate or exclude the incomplete period in every time-series chart (§9)</td></tr>
           <tr><td><code>customer_id</code> used instead of <code>customer_unique_id</code></td><td class="no">Customer analysis becomes meaningless</td><td>Enforced in <code>dim_customer</code>; a dbt test asserts the dimension's row count is below the order count</td></tr>
           <tr><td>Payment fan-out inflates revenue</td><td class="no">Wrong headline numbers</td><td>Separate fact tables; GX reconciliation test (§7)</td></tr>
-          <tr><td>Scheduling a static dataset reads as cargo-culting</td><td class="no">Architecture criterion</td><td>Address it explicitly in the report and the deck (§8)</td></tr>
-          <tr><td>Scope creep into dashboards or streaming</td><td class="no">Missed deadline</td><td>§11</td></tr>
+          <tr><td>Scheduling a static dataset reads as cargo-culting</td><td class="no">Architecture criterion</td><td>Partly designed out rather than argued away: only ingestion is on a cron, and the dbt layer is triggered by the load landing, which is the mechanism a real arrival would use. The remaining cron is addressed explicitly in the report and the deck (§8)</td></tr>
+          <tr><td>Dashboards absorb hours that belong to the pipeline</td><td class="no">Missed deadline</td><td>Both surfaces were started only after the spine was complete and green, and neither is on the critical path (§11); streaming, ML, and reverse ETL stay out of scope entirely</td></tr>
           <tr><td>Service-account key or Kaggle token committed to git</td><td class="no">Credential leak; code-quality penalty</td><td><code>.gitignore</code> in the first commit; all secrets in GitHub Actions secrets and local <code>.env</code> (§10)</td></tr>
-          <tr><td>Dagster run history lost because the runner is ephemeral</td><td class="no">No observability over scheduled runs</td><td>Accepted and documented, not mitigated: the durable evidence is Data Docs and dbt docs published to Pages; local history persists under <code>DAGSTER_HOME</code> for development (§8)</td></tr>
+          <tr><td>Dagster run history confined to one unreplicated VM</td><td class="no">Lost observability if the machine is lost</td><td>Accepted and documented: history is durable under a bind-mounted <code>DAGSTER_HOME</code> and survives redeploys and reboots, but is not backed up or readable off-host. The citable evidence remains the dbt docs published to Pages (§8)</td></tr>
+          <tr><td>The daemon is stopped to reclaim memory on the <code>e2-micro</code></td><td class="no">The dbt layer silently stops building while ingestion still reports green</td><td>The daemon evaluates the automation sensor, not just the cron — documented at the service definition in <code>docker-compose.vm.yml</code>, and both triggers default to <code>RUNNING</code> (§8)</td></tr>
           <tr><td>Artifacts not uploaded on a failed run</td><td class="no">Cannot debug a failed nightly</td><td><code>if: always()</code> on the upload step (§8)</td></tr>
           <tr><td>Team collisions in a shared dataset on one main branch</td><td class="no">Broken builds</td><td>Per-developer dbt targets; <code>nbstripout</code> for notebooks (§10)</td></tr>
           <tr><td>Non-engineering members idle while waiting on the pipeline</td><td class="no">Wasted capacity, weak documentation</td><td>Lane C starts day 1 from this document, not from working code (§15)</td></tr>

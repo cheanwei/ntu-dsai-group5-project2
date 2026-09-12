@@ -33,8 +33,9 @@ See `docs/diagrams/01-high-level-architecture.excalidraw`.
 ```
 Kaggle CSVs → GCS raw zone → dlt → BigQuery → dbt (staging → intermediate → marts)
                                        ↓                        ↓
-                              dbt + dbt-expectations    SQLAlchemy + pandas
-                                                          (Jupyter notebooks)
+                              dbt + dbt-expectations   ┌── SQLAlchemy + pandas (Jupyter)
+                                                       ├── Streamlit app (via Flask API)
+                                                       └── Power BI (import from marts)
 
               all of it orchestrated as Dagster software-defined assets
 ```
@@ -47,7 +48,7 @@ Five layers, each with one job, plus orchestration spanning all of them:
 | Raw zone | Google Cloud Storage | Immutable, date-partitioned landing zone |
 | Ingestion | dlt | Typed load into BigQuery, idempotent |
 | Warehouse | BigQuery + dbt | Transform raw into a queryable dimensional model |
-| Consumption | SQLAlchemy + pandas | Analysis, notebooks, exported charts |
+| Consumption | SQLAlchemy + pandas; Streamlit; Power BI | Notebook analysis, an interactive app, an executive report — all reading `olist_marts` only |
 | Orchestration | Dagster | One lineage graph across all of the above |
 
 ### Why ELT rather than ETL
@@ -81,7 +82,8 @@ Cost at this volume is roughly one cent per month.
 | Transformation | **dbt Core** | dbt Cloud; raw SQL scripts; Spark; pandas | Dependency resolution, testing, and documentation in one tool. Spark is unjustifiable at 120 MB and would be a red flag, not a strength. pandas transformations do not scale and cannot be tested declaratively. |
 | Quality | **dbt tests + dbt-expectations** | A second assertion framework | Two tiers, one runner — see §7. |
 | Orchestration | **Dagster** | Airflow; cron; GitHub Actions | The pipeline *is* a graph of tables, which is exactly Dagster's asset model. `@dbt_assets` reads the dbt manifest and generates one Dagster asset per dbt model, so there is no second DAG definition to drift out of sync. Airflow would require hand-writing dependencies dbt already knows. Cron gives no lineage and no observability. |
-| Analysis | **SQLAlchemy + pandas** | Direct BigQuery client; Streamlit | Specified by the brief; keeps the warehouse swappable behind a dialect. |
+| Analysis | **SQLAlchemy + pandas** | Direct BigQuery client | Specified by the brief; keeps the warehouse swappable behind a dialect. |
+| Dashboards | **Streamlit + Power BI** | Looker Studio; a single surface; no dashboard at all | Two audiences with different failure modes under a live presentation: Power BI imports a snapshot for the headline numbers, Streamlit stays interactive for the geography. Neither is on the critical path, and both were started only after the spine was green — see §11. |
 
 ### Why dbt Core rather than dbt Cloud
 
@@ -767,6 +769,11 @@ olist-data-platform/
 │       ├── provision_vm.sh            # the machine, the firewall, IAP ingress
 │       └── Dockerfile                 # project deps; runs the pipeline
 ├── notebooks/                         # one per person, nbstripout installed    B2
+├── dashboards/                        # the two consumption surfaces (§11)
+│   ├── api.py                         # Flask API in front of olist_marts       B2
+│   ├── dashboard.py                   # Streamlit app: folium city map          B2
+│   ├── streamlit/                     # app assets
+│   └── powerbi/                       # .pbix — executive KPI report            C2
 ├── docs/
 │   ├── architecture-design.md         # this file
 │   └── diagrams/                      # draw.io + Excalidraw, generated
@@ -806,24 +813,55 @@ Two conventions that prevent most collisions:
 
 ## 11. Out of scope, and stretch goals
 
-**A dashboard is a conditional stretch goal, not a component.** No dashboard is a
-required deliverable, and none advances the four focus criteria directly.
+**The dashboard stretch goal was taken, and taken twice.** §1 scoped dashboards
+out and this section previously argued they should stay out. That decision was
+reversed once the pipeline spine was complete and green — the precondition the
+earlier draft itself set. `dashboards/` now holds two consumers of `olist_marts`,
+aimed at two different audiences.
 
-If one is built, use **Looker Studio**, not Streamlit. Looker Studio connects to
-BigQuery natively, requires no code, costs nothing, and can be owned end to end by
-a non-engineering team member (§15) while the engineers stay on the critical path.
-Streamlit's real cost is engineering hours diverted from the pipeline; Looker
-Studio's is close to zero of them.
+| Surface | Audience | Reads |
+|---|---|---|
+| **Streamlit** — `dashboards/dashboard.py` | Anyone who wants to interrogate the data without writing SQL | A Flask API (`dashboards/api.py`) sitting in front of the marts |
+| **Power BI** — `dashboards/powerbi/` | The executive audience of the deck | An import-mode extract of the marts, refreshed on demand |
 
-Streamlit remains defensible only if a team member specifically wants the
-engineering practice and the pipeline is already complete and green. In that case
-it must read a **pre-aggregated Parquet or DuckDB extract** materialised by a
-Dagster asset — never live BigQuery, which turns every widget interaction into a
-query job and puts a network dependency in the middle of a timed presentation.
-Three or four pages maximum.
+Neither is on the critical path, neither is a graded deliverable, and both are
+framed in the deck exactly as the original stretch goal would have been: evidence
+that the marts are consumable without SQL.
 
-Either way, it is framed in the deck as evidence that the marts are consumable
-without SQL.
+**Why two surfaces rather than one.** They are not redundant, because they fail
+differently under the constraint that actually matters — a live, timed
+presentation. Power BI carries the headline numbers, and an import-mode extract
+means the report renders from a local snapshot with no network call and no query
+job at all. Streamlit carries the interactive geography (a `folium` map of
+revenue by city), where the entire point is that the audience can ask for a cut
+nobody prepared in advance. A single surface would have to be either safe or
+interactive; two can be both.
+
+**Why Streamlit rather than Looker Studio.** The earlier draft preferred Looker
+Studio because it is code-free, connects to BigQuery natively, and can be owned
+end to end by a non-engineering member (§15) while the engineers stay on the
+critical path. That reasoning was sound and it lost to two facts. Power BI now
+occupies the no-code executive slot, so the second surface has no reason to be
+no-code as well — which converts Streamlit's cost, engineering hours, into the
+thing that distinguishes it. And the map is the part of the analysis worth
+showing interactively: `streamlit-folium` renders it in a few lines, whereas
+Looker Studio's geo chart does not carry Brazilian municipal geography and would
+need it supplied.
+
+**The constraint that survived the reversal.** The earlier draft's real argument
+was never about tooling — it was that no dashboard may put a per-interaction
+query job between a widget and the audience. That still holds, and both surfaces
+respect it by different means: Power BI imports rather than using DirectQuery,
+and Streamlit goes through the Flask API rather than opening a BigQuery session
+on every rerun. The pre-aggregated Parquet or DuckDB extract the earlier draft
+demanded is one way to honour that rule; these are two others. What would break
+it is widening the API past the marts, or pointing either surface at `staging` —
+both of which also violate the rule in §9 that consumers read `olist_marts` only.
+
+**Current state.** `dashboard.py` calls `/api/cities`, and `api.py` does not
+serve that endpoint yet — it still carries the scaffold routes. The seam is in
+the right place; the endpoint behind it is the one open item in this section.
+`dashboards/powerbi/` is likewise an empty directory awaiting the `.pbix`.
 
 The second stretch goal, the Compose deployment in `orchestration/deploy/`
 (§8), was built. It is no longer a claim that this *would* run as a container in
@@ -849,7 +887,7 @@ Also out of scope: streaming ingestion, ML models, reverse ETL, and dbt snapshot
 | `customer_id` used instead of `customer_unique_id` | Customer analysis becomes meaningless | Enforced in `dim_customer`; a dbt test asserts the dimension's row count is below the order count |
 | Payment fan-out inflates revenue | Wrong headline numbers | Separate fact tables; GX reconciliation test (§7) |
 | Scheduling a static dataset reads as cargo-culting | Architecture criterion | Partly designed out rather than argued away: only ingestion is on a cron, and the dbt layer is triggered by the load landing, which is the mechanism a real arrival would use. The remaining cron is addressed explicitly in the report and the deck (§8) |
-| Scope creep into dashboards or streaming | Missed deadline | §11 |
+| Dashboards absorb hours that belong to the pipeline | Missed deadline | Both surfaces were started only after the spine was complete and green, and neither is on the critical path (§11); streaming, ML, and reverse ETL stay out of scope entirely |
 | Service-account key or Kaggle token committed to git | Credential leak; code-quality penalty | `.gitignore` in the first commit; all secrets in GitHub Actions secrets and local `.env` (§10) |
 | Dagster run history confined to one unreplicated VM | Lost observability if the machine is lost | Accepted and documented: history is durable under a bind-mounted `DAGSTER_HOME` and survives redeploys and reboots, but is not backed up or readable off-host. The citable evidence remains the dbt docs published to Pages (§8) |
 | The daemon is stopped to reclaim memory on the `e2-micro` | The dbt layer silently stops building while ingestion still reports green | The daemon evaluates the automation sensor, not just the cron — documented at the service definition in `docker-compose.vm.yml`, and both triggers default to `RUNNING` (§8) |

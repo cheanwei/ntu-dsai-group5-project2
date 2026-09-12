@@ -20,7 +20,7 @@ def high_level_architecture() -> Diagram:
 
     b.append(Box("title", 40, 30, 1390, 50,
                  "Olist Brazilian E-Commerce  ·  Data Platform Architecture\n"
-                 "Kaggle CSVs → GCS raw zone → dlt → BigQuery (ELT via dbt) → analytics",
+                 "Kaggle CSVs → GCS raw zone → dlt → BigQuery (ELT via dbt) → notebooks · Streamlit · Power BI",
                  "note", font=14))
 
     # -- zones -----------------------------------------------------------
@@ -29,7 +29,7 @@ def high_level_architecture() -> Diagram:
         Box("z2", 300, 170, 210, 190, "2 · RAW ZONE", "zone", zone=True, font=11),
         Box("z3", 560, 170, 210, 190, "3 · INGESTION (EL)", "zone", zone=True, font=11),
         Box("z4", 820, 110, 300, 530, "4 · WAREHOUSE — BigQuery", "zone", zone=True, font=11),
-        Box("z5", 1170, 170, 260, 340, "5 · CONSUMPTION", "zone", zone=True, font=11),
+        Box("z5", 1170, 170, 260, 470, "5 · CONSUMPTION", "zone", zone=True, font=11),
         Box("z6", 560, 425, 210, 215, "6 · DATA QUALITY", "zone", zone=True, font=11),
     ]
 
@@ -56,11 +56,15 @@ def high_level_architecture() -> Diagram:
         Box("gx", 580, 555, 170, 72,
             "dbt-expectations — tier 2\nbusiness invariants\ninside dbt build", "quality", font=10),
 
-        Box("nb", 1195, 210, 210, 95,
+        Box("nb", 1195, 200, 210, 92,
             "Jupyter + pandas\nSQLAlchemy\n(sqlalchemy-bigquery)\nsales · products · RFM", "consume", font=10),
-        Box("dbtdocs", 1195, 320, 210, 68,
+        Box("streamlit", 1195, 302, 210, 92,
+            "Streamlit app\ndashboards/dashboard.py\nFlask API + folium map\nself-serve exploration", "consume", font=10),
+        Box("powerbi", 1195, 404, 210, 92,
+            "Power BI\nnative BigQuery connector\ndashboards/powerbi/\nexecutive KPI report", "consume", font=10),
+        Box("dbtdocs", 1195, 506, 210, 60,
             "dbt docs\nlineage graph + catalog", "consume", font=10),
-        Box("gxdocs", 1195, 403, 210, 68,
+        Box("gxdocs", 1195, 576, 210, 56,
             "Dagster asset checks\npass/fail per asset", "consume", font=10),
 
         Box("dagster", 40, 700, 1390, 112,
@@ -82,9 +86,11 @@ def high_level_architecture() -> Diagram:
         Edge("f4", "raw", "stg", [(970, 237), (970, 262)], "dbt"),
         Edge("f5", "stg", "int", [(970, 334), (970, 359)], "dbt"),
         Edge("f6", "int", "marts", [(970, 431), (970, 456)], "dbt"),
-        Edge("f7", "marts", "nb", [(1095, 490), (1145, 490), (1145, 257), (1195, 257)], "SQL"),
-        Edge("f8", "marts", "dbtdocs", [(1095, 504), (1160, 504), (1160, 354), (1195, 354)], ""),
-        Edge("f9", "gx", "gxdocs", [(750, 591), (1160, 591), (1160, 437), (1195, 437)], ""),
+        Edge("f7", "marts", "nb", [(1095, 466), (1140, 466), (1140, 246), (1195, 246)], "SQL"),
+        Edge("f7b", "marts", "streamlit", [(1095, 486), (1148, 486), (1148, 348), (1195, 348)], "SQL"),
+        Edge("f7c", "marts", "powerbi", [(1095, 506), (1156, 506), (1156, 450), (1195, 450)], "connector"),
+        Edge("f8", "marts", "dbtdocs", [(1095, 526), (1164, 526), (1164, 536), (1195, 536)], ""),
+        Edge("f9", "gx", "gxdocs", [(750, 591), (1172, 591), (1172, 604), (1195, 604)], ""),
 
         Edge("q1", "dbttests", "stg", [(750, 480), (845, 300)], "", dashed=True),
         Edge("q2", "dbttests", "marts", [(750, 510), (845, 490)], "", dashed=True),
