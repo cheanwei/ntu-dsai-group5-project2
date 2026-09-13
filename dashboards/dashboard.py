@@ -1,3 +1,4 @@
+from pathlib import Path
 import folium
 import pandas as pd
 import requests
@@ -5,33 +6,29 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 BASE = f"http://localhost:{5001}"
+PAGE_PATH = Path(__file__).resolve().parent / "streamlit" / "salesmap.py"
+SUNBURST_PATH = Path(__file__).resolve().parent / "streamlit" / "sunburst.py"
 
 # set_page_config must be the first Streamlit call on the page.
 st.set_page_config(page_title="Olist Brazilian E-Commerce", layout="wide")
 st.title("Olist Brazilian E-Commerce")           # big heading
-st.subheader("Revenue of Olist Brazilian E-Commerce split by Cities")  # smaller heading
-st.caption(f"Every number on this page came from our own API at {BASE}")
+#st.subheader("Revenue of Olist Brazilian E-Commerce split by Cities")  # smaller heading
+#st.caption(f"Every number on this page came from our own API at {BASE}")
 
-cities = pd.DataFrame(requests.get(f"{BASE}/api/cities").json().get("cities", []))
-if cities.empty:
-    st.warning("No data loaded.")
-    st.stop()
-st.dataframe(cities, width="stretch")
+pg = st.navigation(
+    [
+        st.Page(
+            str(PAGE_PATH),
+            title="Olist Revenue Geo-Map",
+            icon=":material/overview:",
+            default=True,
+        ),
+        st.Page(
+            str(SUNBURST_PATH),
+            title="Top Product Revenue",
+            icon=":material/overview:",
+        ),
+    ]
+)
+pg.run()
 
-m = folium.Map(location=(-23.545, -46.639), zoom_start=4, tiles="OpenStreetMap")
-
-# Brazil_cities = [{"name": "Brasília", "latitude":-15.8267, "longitude":-47.921},
-#                        {"name": "Rio de Janeiro", "latitude":-22.9068, "longitude":-43.1729}]
-for city in cities.to_dict(orient="records"):
-    folium.Marker(
-        location=[city["latitude"], city["longitude"]],
-        popup=city["name"],
-        icon=folium.Icon(color="blue")
-    ).add_to(m)
-
-st_data = st_folium(m, width=700, height=500)
-
-# Show click info
-st.write("Map interaction:", st_data)
-m = folium.Map(location=(-14.235, -51.925), zoom_start=4, tiles="OpenStreetMap")
-st_data = st_folium(m, width=700, height=500)
