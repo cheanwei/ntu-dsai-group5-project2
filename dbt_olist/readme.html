@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Warehouse Schema Architecture v4</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #24292e;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 30px 20px;
+            background-color: #ffffff;
+        }
+        h1 { border-bottom: 2px solid #eaecef; padding-bottom: 10px; color: #1a202c; }
+        h2 { border-bottom: 1px solid #eaecef; padding-bottom: 7px; margin-top: 30px; color: #2d3748; }
+        h3 { margin-top: 20px; color: #4a5568; }
+        pre {
+            background-color: #f6f8fa;
+            border-radius: 6px;
+            padding: 16px;
+            overflow: auto;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+        table { border-collapse: collapse; width: 100%; margin: 15px 0 25px 0; }
+        th, td { border: 1px solid #dfe2e5; padding: 10px 14px; text-align: left; }
+        th { background-color: #f6f8fa; font-weight: 600; }
+        tr:nth-child(even) { background-color: #fcfcfc; }
+        code { background-color: rgba(27,31,35,0.05); border-radius: 3px; font-family: monospace; font-size: 85%; padding: 0.2em 0.4em; }
+        .badge-pk { background-color: #d1fae5; color: #065f46; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+        .badge-fk { background-color: #dbeafe; color: #1e40af; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <h1>Data Warehouse Schema & Data Mart Architecture</h1>
+    <p>This document details the Star Schema Data Warehouse and Data Mart architecture for the Brazilian E-Commerce Dataset (Olist). The architecture separates granular transactional fact data from descriptive dimensions, enabling efficient analytical queries, spatial mapping, and executive reporting [1, 2].</p>
+
+    <h2>1. Data Lineage & Flow Connections</h2>
+    <p>The lineage illustrates that <strong>Fact Tables (3) and (4) pull transactional data directly from the RAW OLIST DATASETS</strong> (such as <code>olist_order_items_dataset</code>, <code>olist_orders_dataset</code>, <code>olist_customers_dataset</code>, <code>olist_sellers_dataset</code>, and <code>olist_order_payments_dataset</code>), while simultaneously ingesting spatial coordinates and category translations from <strong>(1) <code>dim_geolocation</code></strong> and <strong>(2) <code>dim_product</code></strong> [3, 4]:</p>
+
+    <pre>
+                                RAW OLIST DATASETS
+       ┌───────────────────┬────────────┴────────────┬───────────────────┐
+       │                   │                         │                   │
+       ▼                   ▼                         │                   │
+(1) dim_geolocation   (2) dim_product                │                   │
+(Deduplicated Lat/Lng)(English Categories)           │                   │
+       │                   │                         │                   │
+       │                   ├─────────────────────────┼───────────────────┤
+       │  Enrich Lat/Lng   │ Enrich Categories       │                   │
+       ▼                   ▼                         ▼                   ▼
+┌───────────────────────────────────────┐   ┌───────────────────────────────────┐
+│ (3) fact_revenue_by_product_seller_loc│   │ (4) fact_sale_order_location      │
+└───────────────────┬───────────────────┘   └─────────────────┬─────────────────┘
+                    │                                         │
+                    │                                         │ 
+                    ▼                                         ▼
+┌───────────────────────────────────────┐   ┌───────────────────────────────────┐
+│ (5) mart_revenue_by_location          │   │ (6) mart_seller_by_location       │
+└───────────────────────────────────────┘   └───────────────────────────────────┘
+    </pre>
+
+    <h2>2. Table Specifications</h2>
+
+    <h3>(1) <code>dim_geolocation</code> (Spatial Dimension Table)</h3>
+    <p><em>Stores deduplicated 5-digit postal code coordinates (<code>AVG(geolocation_lat)</code>, <code>AVG(geolocation_lng)</code>) generated from <code>olist_geolocation_dataset</code> [4].</em></p>
+    <table>
+        <thead><tr><th>Column Name</th><th>Data Type</th><th>Key Type</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>zip_code_prefix</code></td><td><code>STRING</code></td><td><span class="badge-pk">Primary Key</span></td><td>Deduplicated 5-digit zip code prefix.</td></tr>
+            <tr><td><code>latitude</code></td><td><code>FLOAT64</code></td><td>Attribute</td><td>Calculated average latitude.</td></tr>
+            <tr><td><code>longitude</code></td><td><code>FLOAT64</code></td><td>Attribute</td><td>Calculated average longitude.</td></tr>
+            <tr><td><code>city</code></td><td><code>STRING</code></td><td>Attribute</td><td>City name.</td></tr>
+            <tr><td><code>state</code></td><td><code>STRING</code></td><td>Attribute</td><td>2-letter state code.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>(2) <code>dim_product</code> (Product Dimension Table)</h3>
+    <p><em>Contains product catalog information and English category translations derived from <code>olist_products_dataset</code> and <code>product_category_name_translation</code> [3].</em></p>
+    <table>
+        <thead><tr><th>Column Name</th><th>Data Type</th><th>Key Type</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>product_id</code></td><td><code>STRING</code></td><td><span class="badge-pk">Primary Key</span></td><td>Unique product identifier.</td></tr>
+            <tr><td><code>product_category_name_english</code></td><td><code>STRING</code></td><td>Attribute</td><td>English translation (e.g., <code>bed_bath_table</code>, <code>health_beauty</code>).</td></tr>
+            <tr><td><code>product_weight_g</code></td><td><code>INT64</code></td><td>Attribute</td><td>Product weight in grams.</td></tr>
+            <tr><td><code>product_length_cm</code></td><td><code>INT64</code></td><td>Attribute</td><td>Package length in cm.</td></tr>
+            <tr><td><code>product_height_cm</code></td><td><code>INT64</code></td><td>Attribute</td><td>Package height in cm.</td></tr>
+            <tr><td><code>product_width_cm</code></td><td><code>INT64</code></td><td>Attribute</td><td>Package width in cm.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>(3) <code>fact_revenue_by_product_seller_location</code> (Transaction Item Fact Table)</h3>
+    <p><em>Granular item-level fact table created from <strong>RAW OLIST DATASETS</strong> (<code>olist_order_items_dataset</code>, <code>olist_orders_dataset</code>, <code>olist_sellers_dataset</code>) and enriched by <strong>(1) <code>dim_geolocation</code></strong> and <strong>(2) <code>dim_product</code></strong>.</em></p>
+    <table>
+        <thead><tr><th>Column Name</th><th>Data Type</th><th>Key Type</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>order_id</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (Raw Orders)</span></td><td>Transaction order identifier.</td></tr>
+            <tr><td><code>order_item_id</code></td><td><code>INT64</code></td><td><span class="badge-pk">Primary Key (Raw Items)</span></td><td>Item line number within the order.</td></tr>
+            <tr><td><code>product_id</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (from 2 / Raw Products)</span></td><td>Links to <code>dim_product.product_id</code>.</td></tr>
+            <tr><td><code>seller_id</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (Raw Sellers)</span></td><td>Merchant identifier.</td></tr>
+            <tr><td><code>seller_zip_code_prefix</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (from 1)</span></td><td>Links to <code>dim_geolocation.zip_code_prefix</code>.</td></tr>
+            <tr><td><code>price</code></td><td><code>FLOAT64</code></td><td>Metric (Raw Item Price)</td><td>Product item price in BRL.</td></tr>
+            <tr><td><code>freight_value</code></td><td><code>FLOAT64</code></td><td>Metric (Raw Freight Value)</td><td>Shipping charge in BRL.</td></tr>
+            <tr><td><code>total_revenue</code></td><td><code>FLOAT64</code></td><td>Metric</td><td>Derived transaction value (<code>price + freight_value</code>).</td></tr>
+        </tbody>
+    </table>
+
+    <h3>(4) <code>fact_sale_order_location</code> (Customer Order Location Fact Table)</h3>
+    <p><em>Order-level fact table created from <strong>RAW OLIST DATASETS</strong> (<code>olist_orders_dataset</code>, <code>olist_customers_dataset</code>, <code>olist_order_payments_dataset</code>) and enriched by <strong>(1) <code>dim_geolocation</code></strong> and <strong>(2) <code>dim_product</code></strong>.</em></p>
+    <table>
+        <thead><tr><th>Column Name</th><th>Data Type</th><th>Key Type</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>order_id</code></td><td><code>STRING</code></td><td><span class="badge-pk">Primary Key (Raw Orders)</span></td><td>Unique order identifier.</td></tr>
+            <tr><td><code>customer_id</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (Raw Customers)</span></td><td>Transactional customer ID.</td></tr>
+            <tr><td><code>customer_unique_id</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (Raw Customers)</span></td><td>Persistent customer identifier for repurchase tracking [5, 6].</td></tr>
+            <tr><td><code>customer_zip_code_prefix</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (from 1)</span></td><td>Links to <code>dim_geolocation.zip_code_prefix</code>.</td></tr>
+            <tr><td><code>product_id</code></td><td><code>STRING</code></td><td><span class="badge-fk">Foreign Key (from 2 / Raw Products)</span></td><td>Links to <code>dim_product.product_id</code>.</td></tr>
+            <tr><td><code>total_order_revenue</code></td><td><code>FLOAT64</code></td><td>Metric (Raw Payments)</td><td>Total payment value across all payment methods.</td></tr>
+            <tr><td><code>order_purchase_timestamp</code></td><td><code>TIMESTAMP</code></td><td>Metric / Attr (Raw Orders)</td><td>Date and time order was placed.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>(5) <code>mart_revenue_by_location</code> (Location Summary Data Mart)</h3>
+    <p><em>Pre-aggregated data mart built by linking <strong>(3)</strong> <code>fact_revenue_by_product_seller_location</code> with <strong>(1)</strong> <code>dim_geolocation</code> and <strong>(2)</strong> <code>dim_product</code>.</em></p>
+    <table>
+        <thead><tr><th>Column Name</th><th>Data Type</th><th>Metric Type</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>city</code></td><td><code>STRING</code></td><td>Dimension</td><td>Destination / Origin City Name.</td></tr>
+            <tr><td><code>state</code></td><td><code>STRING</code></td><td>Dimension</td><td>2-letter State Code.</td></tr>
+            <tr><td><code>latitude</code></td><td><code>FLOAT64</code></td><td>Spatial Key</td><td>Map marker Y-coordinate.</td></tr>
+            <tr><td><code>longitude</code></td><td><code>FLOAT64</code></td><td>Spatial Key</td><td>Map marker X-coordinate.</td></tr>
+            <tr><td><code>total_orders</code></td><td><code>INT64</code></td><td>Aggregated Metric</td><td>Total count of distinct orders.</td></tr>
+            <tr><td><code>total_revenue_Brazilian_Real</code></td><td><code>FLOAT64</code></td><td>Aggregated Metric</td><td>Total revenue generated in BRL.</td></tr>
+        </tbody>
+    </table>
+
+    <h3>(6) <code>mart_seller_by_location</code> (Seller & Category Spatial Data Mart)</h3>
+    <p><em>Pre-aggregated data mart built by linking <strong>(4)</strong> <code>fact_sale_order_location</code> with <strong>(1)</strong> <code>dim_geolocation</code> and <strong>(2)</strong> <code>dim_product</code>.</em></p>
+    <table>
+        <thead><tr><th>Column Name</th><th>Data Type</th><th>Metric Type</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td><code>product_category_name_english</code></td><td><code>STRING</code></td><td>Dimension</td><td>English product category name.</td></tr>
+            <tr><td><code>seller_id</code></td><td><code>STRING</code></td><td>Dimension</td><td>Merchant identifier.</td></tr>
+            <tr><td><code>city</code></td><td><code>STRING</code></td><td>Dimension</td><td>Seller city.</td></tr>
+            <tr><td><code>state</code></td><td><code>STRING</code></td><td>Dimension</td><td>Seller 2-letter state code.</td></tr>
+            <tr><td><code>latitude</code></td><td><code>FLOAT64</code></td><td>Spatial Key</td><td>Seller map latitude coordinate.</td></tr>
+            <tr><td><code>longitude</code></td><td><code>FLOAT64</code></td><td>Spatial Key</td><td>Seller map longitude coordinate.</td></tr>
+            <tr><td><code>total_orders</code></td><td><code>INT64</code></td><td>Aggregated Metric</td><td>Distinct count of fulfilled orders.</td></tr>
+            <tr><td><code>total_revenue</code></td><td><code>FLOAT64</code></td><td>Aggregated Metric</td><td>Total order value in BRL.</td></tr>
+        </tbody>
+    </table>
+
+    <h2>3. Key Architecture & Design Choices</h2>
+    <ul>
+        <li><strong>Fact Ingestion from Raw Data</strong>: Fact tables <strong>(3)</strong> and <strong>(4)</strong> ingest core transactional attributes directly from the <strong>RAW OLIST DATASETS</strong>, while enriching them with coordinates from <strong>(1)</strong> and categories from <strong>(2)</strong>.</li>
+        <li><strong>Geolocation Deduplication</strong>: Aggregating the 1M+ row raw geolocation dataset to unique 5-digit postal code averages prevents severe fan-out join errors [4].</li>
+        <li><strong>Customer ID vs. Persistent Unique ID</strong>: Utilizing <code>customer_unique_id</code> preserves persistent buyer identity for RFM clustering, CLV, and customer churn modeling [5, 6].</li>
+    </ul>
+
+</body>
+</html>
