@@ -31,6 +31,12 @@ dependencies = [
     # Analysis (§9)
     "sqlalchemy>=2.0",
     "sqlalchemy-bigquery>=1.17",
+    # Optional accelerator that sqlalchemy-bigquery probes for at connect time.
+    # Without it every result set is pulled over the REST tabledata.list
+    # endpoint and the client warns on each new session; with it, results
+    # stream as Arrow over gRPC. Declared because the notebooks depend on the
+    # behaviour, not because anything imports it directly.
+    "google-cloud-bigquery-storage>=2.27",
     # Capped below 3.0 on purpose: pandas 3.0 is a breaking major release and
     # the notebooks, GX and dbt paths here are not validated against it. Lift
     # the cap as a deliberate piece of work, not as a side effect of a sync.

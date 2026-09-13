@@ -1367,6 +1367,22 @@ pandas = [
 ]
 
 [[package]]
+name = "google-cloud-bigquery-storage"
+version = "2.41.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "grpcio" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/45/de/d499a74cad60fe548986504da00e20177cb1d3c8bfbb1fc2347e518f8cbd/google_cloud_bigquery_storage-2.41.0.tar.gz", hash = "sha256:b999295f08ce7e2d6a260d245b5b9843ba1603f6164515c9f0cb5d81ee71a5d2", size = 315252, upload-time = "2026-08-25T19:18:34.837Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/c9/1dc5941062fd196959ab343174d91f132cb2308cc3c80deb7dd194543977/google_cloud_bigquery_storage-2.41.0-py3-none-any.whl", hash = "sha256:a7511f05aedb533e01f029e30b26ff073ca66d672f701bb736024553697b589c", size = 308013, upload-time = "2026-08-24T21:55:17.697Z" },
+]
+
+[[package]]
 name = "google-cloud-core"
 version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2697,6 +2713,7 @@ dependencies = [
     { name = "dlt", extra = ["bigquery", "filesystem", "gs"] },
     { name = "flask" },
     { name = "folium" },
+    { name = "google-cloud-bigquery-storage" },
     { name = "google-cloud-storage" },
     { name = "jupyterlab" },
     { name = "kagglehub" },
@@ -2736,6 +2753,7 @@ requires-dist = [
     { name = "dlt", extras = ["bigquery", "filesystem", "gs"], specifier = ">=1.30" },
     { name = "flask", specifier = ">=3.1.3" },
     { name = "folium", specifier = ">=0.20.0" },
+    { name = "google-cloud-bigquery-storage", specifier = ">=2.27" },
     { name = "google-cloud-storage", specifier = ">=2.19" },
     { name = "jupyterlab", specifier = ">=4.3" },
     { name = "kagglehub", specifier = ">=1.0" },
