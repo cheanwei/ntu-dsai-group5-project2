@@ -63,6 +63,9 @@ duckdb = ["dbt-duckdb>=1.9,<1.12"]
 [dependency-groups]
 dev = [
     "ruff>=0.9",
+    # Kept for the `diff=ipynb` textconv only (readable notebook diffs); it is
+    # NOT installed as a git clean filter -- notebook outputs are committed on
+    # purpose so charts render on GitHub.
     "nbstripout>=0.8",
     "pytest>=8.3",
     # Only for `bootstrap_env.py --oauth`, which mints a Kaggle token from the

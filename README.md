@@ -30,7 +30,7 @@ Install dependencies and create local configuration:
 git clone <repository-url>
 cd ntu-dsai-group5-project2
 uv sync
-uv run nbstripout --install
+git config diff.ipynb.textconv "uv run nbstripout -t"
 uv run python scripts/bootstrap_env.py
 ```
 
@@ -119,9 +119,15 @@ dbt tests run as part of `dbt build`. The complete quality inventory is in
 
 ## Development guardrails
 
-- Run `uv run nbstripout --install` in every clone. The committed
-  `.gitattributes` declares the filter, but each clone must register the
-  executable locally or notebook outputs can enter commits silently.
+- Notebook outputs are committed on purpose, so charts and tables render on
+  GitHub. There is no output-stripping filter; do not install one. Re-run a
+  notebook before committing it so its stored outputs match its code.
+- Register the notebook diff driver in every clone:
+  `git config diff.ipynb.textconv "uv run nbstripout -t"`. `.gitattributes`
+  declares `*.ipynb diff=ipynb`, but the command itself lives in local
+  `.git/config` and is not copied by `git clone`. Without it, notebook diffs
+  are raw JSON including base64 images. Note that `git diff --stat` reports
+  raw-blob line counts regardless; only the diff body is filtered.
 - The `dev` target always writes to `dbt_dev_*` datasets. Developer
   isolation comes from using a separate `GCP_PROJECT`, not from renaming the
   target dataset.
