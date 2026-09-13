@@ -15,6 +15,14 @@ from diagram_lib import Box, Diagram, Edge, emit
 
 OUT = Path(__file__).parent
 
+# Boxes whose first line names something get an enlarged, zone-coloured heading.
+# Zone labels, the legend and the prototype note keep a single uniform size.
+COMPONENT_BOXES = {
+    "kaggle", "gcs", "dlt", "raw", "stg", "int", "marts",
+    "dbttests", "gx", "nb", "dbtdocs", "gxdocs",
+    "dagster",  # the orchestration band's first line is a heading like any other
+}
+
 
 # =============================================================== DIAGRAM 1 ===
 def high_level_architecture() -> Diagram:
@@ -122,7 +130,7 @@ def high_level_architecture() -> Diagram:
             462,
             170,
             78,
-            "dbt built-ins + dbt-utils\nunique · not_null\nrelationships · domains",
+            "dbt built-ins\n+ dbt-utils\nunique · not_null\nrelationships · domains",
             "quality",
             font=10,
         ),
@@ -211,6 +219,9 @@ def high_level_architecture() -> Diagram:
         Edge("o2", "dagster", "gx", [(665, 700), (665, 627)], "", dashed=True),
         Edge("o3", "dagster", "marts", [(970, 700), (970, 551)], "", dashed=True),
     ]
+
+    for box in b:
+        box.head = box.id in COMPONENT_BOXES
 
     return Diagram("High-Level Architecture", 1470, 920, b, e)
 

@@ -22,6 +22,20 @@ PALETTE = {
 # Zone titles must read clearly; the dashed border stays light so it recedes.
 ZONE_LABEL = "#343a40"
 
+# Component names take their zone's hue so the eye can group them, darkened until
+# each clears 4.5:1 on its own fill. The border colours themselves are too light
+# for text at this size (orange 2.3:1, teal 2.9:1).
+HEAD_COLOR = {
+    "source": "#343a40",   # 10.9:1
+    "storage": "#a5390a",  #  6.2:1
+    "move": "#5f3dc4",     #  6.3:1
+    "wh": "#1864ab",       #  5.5:1
+    "mart": "#237032",     #  5.7:1
+    "consume": "#087f5b",  #  4.7:1
+    "quality": "#c92a2a",  #  4.5:1
+    "orch": "#a5390a",     #  6.1:1
+}
+
 
 @dataclass
 class Box:
@@ -35,6 +49,7 @@ class Box:
     zone: bool = False  # dashed container, rendered behind everything
     font: int = 12
     align: str = "center"
+    head: bool = False  # render the first label line as a larger component name
 
 
 @dataclass
@@ -98,6 +113,11 @@ def _common(eid, x, y, w, h, stroke, fill, dashed=False):
 _CHAR_W = 0.58  # Helvetica average advance / font size
 _LINE_H = 1.25
 
+# Excalidraw text elements carry no font weight and only one size each, so a
+# component name is emitted as its own, larger element rather than as bold.
+_HEAD_BUMP = 3
+_HEAD_CHAR_W = 0.55  # only used to keep an enlarged name on a single line
+
 
 def to_excalidraw(d: Diagram) -> str:
     els = []
@@ -118,6 +138,45 @@ def to_excalidraw(d: Diagram) -> str:
 
         lines = b.label.split("\n")
         fs = b.font + 2
+
+        if b.head and not b.zone and len(lines) > 1:
+            head_line, body_lines = lines[0], lines[1:]
+            head_fs = fs + _HEAD_BUMP
+            # shrink back rather than let a longer name wrap and break the layout
+            while head_fs > fs and len(head_line) * head_fs * _HEAD_CHAR_W > b.w - 16:
+                head_fs -= 1
+            head_h = round(head_fs * _LINE_H, 1)
+            body_h = round(len(body_lines) * fs * _LINE_H, 1)
+            gap = 4
+            top = b.y + (b.h - (head_h + gap + body_h)) / 2
+
+            rect["boundElements"] = bound.get(b.id, [])
+            els.append(rect)
+
+            head_color = HEAD_COLOR.get(b.kind, "#1e1e1e")
+            for eid, y, h, size, txt, colour in (
+                (tid, top, head_h, head_fs, head_line, head_color),
+                (b.id + "_b", top + head_h + gap, body_h, fs, "\n".join(body_lines), "#1e1e1e"),
+            ):
+                t = _common(eid, b.x, y, b.w, h, colour, "transparent")
+                t.update(
+                    {
+                        "type": "text",
+                        "text": txt,
+                        "originalText": txt,
+                        "fontSize": size,
+                        "fontFamily": 2,
+                        "textAlign": b.align,
+                        "verticalAlign": "top",
+                        "containerId": None,
+                        "lineHeight": _LINE_H,
+                        "autoResize": False,
+                        "roundness": None,
+                    }
+                )
+                els.append(t)
+            continue
+
         th = round(len(lines) * fs * _LINE_H, 1)
         tw = round(max(len(line) for line in lines) * fs * _CHAR_W, 1)
         valign = "top" if b.zone else "middle"
