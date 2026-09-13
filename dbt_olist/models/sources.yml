@@ -1,0 +1,26 @@
+version: 2
+
+sources: # Anton BigQuery 
+  - name: olist_eCommerce_1
+    description: "The raw data from the Olist eCommerce 1 dataset"
+    database: atomic-box-504614-c7
+    tables:
+      - name: public_olist_products_dataset
+      - name: public_product_category_name_translation
+      - name: public_olist_geolocation_dataset
+      - name: public_olist_orders_dataset
+      - name: public_olist_customers_dataset
+      - name: public_olist_order_payments_dataset
+      - name: public_olist_order_items_dataset
+      - name: public_olist_sellers_dataset
+
+  - name: olist_eCommerce
+    description: "The dimensional table from the Olist eCommerce 1 dataset"
+    database: atomic-box-504614-c7
+    tables:
+      - name: dim_geolocation
+      - name: dim_product
+      - name: fact_sale_order_location
+      - name: fact_revenue_by_product_seller_location
+
+  
