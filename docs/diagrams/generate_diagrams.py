@@ -16,10 +16,10 @@ from diagram_lib import Box, Diagram, Edge, emit
 OUT = Path(__file__).parent
 
 # Boxes whose first line names something get an enlarged, zone-coloured heading.
-# Zone labels, the legend and the prototype note keep a single uniform size.
+# Zone labels and the legend keep a single uniform size.
 COMPONENT_BOXES = {
     "kaggle", "gcs", "dlt", "raw", "stg", "int", "marts",
-    "dbttests", "gx", "nb", "dbtdocs", "gxdocs",
+    "dbttests", "gx", "nb", "streamlit", "powerbi", "dbtdocs", "gxdocs",
     "dagster",  # the orchestration band's first line is a heading like any other
 }
 
@@ -36,7 +36,7 @@ def high_level_architecture() -> Diagram:
             1390,
             50,
             "Olist Brazilian E-Commerce  ·  Data Platform Architecture\n"
-            "Kaggle CSVs → GCS raw zone → dlt → BigQuery → dbt marts → notebook analysis",
+            "Kaggle CSVs → GCS raw zone → dlt → BigQuery → dbt marts → notebooks + dashboards",
             "note",
             font=14,
         )
@@ -147,33 +147,43 @@ def high_level_architecture() -> Diagram:
         Box(
             "nb",
             1195,
-            200,
+            195,
             210,
-            100,
+            80,
             "Jupyter + pandas\n01_data_profiling.ipynb\nSQLAlchemy BigQuery dialect\nqueries marts",
             "consume",
             font=10,
         ),
-        Box("dbtdocs", 1195, 325, 210, 75, "dbt docs\nlineage graph + catalog", "consume", font=10),
         Box(
-            "gxdocs",
+            "streamlit",
             1195,
-            425,
+            300,
             210,
-            75,
-            "Dagster asset checks\npass/fail per asset",
+            80,
+            "Streamlit dashboard\nmap via Flask /api/cities\nsunburst via direct SQL\ndashboards/dashboard.py",
             "consume",
             font=10,
         ),
         Box(
-            "prototypes",
+            "powerbi",
             1195,
-            525,
+            405,
             210,
-            100,
-            "Prototypes (not connected)\nnotebook 02: local CSVs\nStreamlit: missing API route\nPower BI: no report",
-            "note",
-            font=9,
+            65,
+            "Power BI report\nauthored outside this repo\nconnects to BigQuery marts",
+            "consume",
+            font=10,
+        ),
+        Box("dbtdocs", 1195, 495, 210, 50, "dbt docs\nlineage graph + catalog", "consume", font=10),
+        Box(
+            "gxdocs",
+            1195,
+            570,
+            210,
+            50,
+            "Dagster asset checks\npass/fail per asset",
+            "consume",
+            font=10,
         ),
         Box(
             "dagster",
@@ -194,7 +204,7 @@ def high_level_architecture() -> Diagram:
             830,
             1390,
             62,
-            "Solid = data flow   ·   Dashed = control / validation   ·   Unfinished prototypes are excluded from data flow\n"
+            "Solid = data flow   ·   Dashed = control / validation   ·   Exploratory notebook 02 (local CSVs) is excluded from data flow\n"
             "The raw zone makes loading and transformation repeatable without downloading from Kaggle again",
             "note",
             font=10,
@@ -209,9 +219,11 @@ def high_level_architecture() -> Diagram:
         Edge("f4", "raw", "stg", [(970, 237), (970, 262)], "dbt"),
         Edge("f5", "stg", "int", [(970, 334), (970, 359)], "dbt"),
         Edge("f6", "int", "marts", [(970, 431), (970, 456)], "dbt"),
-        Edge("f7", "marts", "nb", [(1095, 466), (1140, 466), (1140, 246), (1195, 246)], "SQL"),
-        Edge("f8", "marts", "dbtdocs", [(1095, 500), (1148, 500), (1148, 362), (1195, 362)], ""),
-        Edge("f9", "gx", "gxdocs", [(750, 591), (1172, 591), (1172, 462), (1195, 462)], ""),
+        Edge("f7", "marts", "nb", [(1095, 466), (1130, 466), (1130, 235), (1195, 235)], ""),
+        Edge("f10", "marts", "streamlit", [(1095, 486), (1140, 486), (1140, 340), (1195, 340)], ""),
+        Edge("f11", "marts", "powerbi", [(1095, 506), (1150, 506), (1150, 437), (1195, 437)], ""),
+        Edge("f8", "marts", "dbtdocs", [(1095, 520), (1195, 520)], ""),
+        Edge("f9", "gx", "gxdocs", [(750, 595), (1195, 595)], ""),
         Edge("q1", "dbttests", "stg", [(750, 480), (845, 300)], "", dashed=True),
         Edge("q2", "dbttests", "marts", [(750, 510), (845, 490)], "", dashed=True),
         Edge("q3", "marts", "gx", [(845, 540), (750, 575)], "validate", dashed=True),

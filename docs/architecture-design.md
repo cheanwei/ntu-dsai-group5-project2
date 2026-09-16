@@ -143,7 +143,7 @@ described as scale-aware design, not as a performance result from this sample.
 | Quality | dbt, dbt-utils, dbt-expectations | Check keys, relationships, domains, ranges, and invariants |
 | Orchestration | `orchestration/` | Materialize assets, schedule ingestion, and trigger dbt |
 | Analysis | `notebooks/01_data_profiling.ipynb` | Query the marts and present the main analysis |
-| Dashboards | `dashboards/` | Flask/Streamlit prototypes; not yet connected as production consumers |
+| Dashboards | `dashboards/` | Streamlit dashboard over the marts (via the Flask `/api/cities` route and direct SQL); the Power BI report is authored outside this repo |
 | Documentation | dbt Docs, `docs/` | Publish the catalog, lineage, and design record |
 
 The repository mirrors these boundaries so that each layer can be developed
@@ -333,17 +333,18 @@ cost controls, commands, and recovery procedures.
 
 ## Consumption status
 
-`notebooks/01_data_profiling.ipynb` is the implemented marts-based analysis.
-Other consumer work is incomplete:
+The marts have three consumers:
 
-- `notebooks/02_sales_trends.ipynb` reads local source CSVs and contains an
-  exploratory BigQuery write path.
-- `dashboards/dashboard.py` calls `/api/cities`, which `dashboards/api.py`
-  does not provide.
-- `dashboards/powerbi/` contains no `.pbix` report.
+- `notebooks/01_data_profiling.ipynb` queries the marts for the main analysis.
+- `dashboards/dashboard.py` is a Streamlit app. Its geo-map page reads
+  `dim_customer` through the Flask route `/api/cities` in
+  `dashboards/citiesapi.py`, and its sunburst page queries
+  `fct_order_items`, `dim_customer`, and `dim_product` directly.
+- A Power BI report connects to the BigQuery marts. It is authored and kept
+  outside this repository, so `dashboards/powerbi/` is empty.
 
-These files remain prototypes and are excluded from the production data flow
-in the diagrams.
+`notebooks/02_sales_trends.ipynb` remains an exploratory prototype: it reads
+local source CSVs and is excluded from the data flow in the diagram.
 
 ## Resolved infrastructure decisions
 

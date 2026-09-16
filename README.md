@@ -163,7 +163,7 @@ Deployment commands and security boundaries are documented in
 | `orchestration/` | Dagster assets, resources, schedules, sensors, and CLI |
 | `scripts/` | Local configuration and one-time GCP provisioning |
 | `notebooks/` | Analysis notebooks; see their README for current status |
-| `dashboards/` | Incomplete Flask, Streamlit, and Power BI prototypes |
+| `dashboards/` | Streamlit dashboard and its Flask API; the Power BI report lives outside the repo |
 | `docs/` | Architecture, quality, schema, and generated diagrams |
 | `tests/` | Python unit and integration-boundary tests |
 
