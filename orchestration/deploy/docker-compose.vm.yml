@@ -29,15 +29,26 @@
 #    directory Compose interpolates ${...} from and the path `env_file:`
 #    resolves against.
 #
-# Reachability: the VM has a public IP, and is not reachable on it. The address
-# carries egress — kaggle.com — while ingress on 22 and 3002 is allowed only
-# from IAP's 35.235.240.0/20 and denied from everywhere else, including by an
-# explicit rule that overrides the default VPC's internet-wide SSH allow. See
-# provision_vm.sh, step 4.
+# Reachability: two webservers, two audiences.
 #
-# The UI still binds 0.0.0.0:3002 rather than 127.0.0.1, necessarily: IAP TCP
+#   webserver           full UI on 3002. Ingress allowed only from IAP's
+#                       35.235.240.0/20 and denied from everywhere else,
+#                       including by an explicit rule that overrides the default
+#                       VPC's internet-wide SSH allow. See provision_vm.sh, step 4.
+#   webserver-readonly  `--read-only` UI on port 80, open to the internet, for
+#                       people without GCP access. Lineage, assets, run history
+#                       and logs only: launching runs, re-executing, and toggling
+#                       schedules and sensors are disabled server-side, not just
+#                       hidden, so an anonymous visitor cannot spend project money
+#                       or replace tables.
+#
+# The full UI binds 0.0.0.0:3002 rather than 127.0.0.1, necessarily: IAP TCP
 # forwarding connects to the instance's internal NIC and would never reach a
 # loopback binding. The firewall, not the bind address, is what closes it.
+#
+# The second webserver loads the code location too, so it costs a few hundred
+# MB of resident memory. Run this file on e2-small (2 GB) or larger; on the
+# 1 GB e2-micro it competes with a materialisation for RAM.
 
 name: olist-dagster
 
@@ -102,6 +113,29 @@ services:
       # Dagster serves this without a GraphQL round-trip, so it answers while
       # the code location is still loading — which on this machine takes the
       # better part of a minute. start_period covers that.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:3000/server_info', timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # The public, view-only UI. Same image, code location and DAGSTER_HOME as
+  # `webserver`, so it shows the same history; --read-only is what makes it safe
+  # to publish, because Dagster has no login of its own. Opened to the internet
+  # on port 80 by provision_vm.sh (allow-public-dagster-readonly).
+  #
+  # It still inherits the key mount and .env from the anchor: loading
+  # orchestration.definitions needs the same environment, even though this
+  # process never executes a run.
+  webserver-readonly:
+    <<: *dagster
+    command: >
+      dagster-webserver -h 0.0.0.0 -p 3000
+      -m orchestration.definitions
+      --read-only
+    ports:
+      - "80:3000"
+    healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:3000/server_info', timeout=5).status==200 else 1)\""]
       interval: 30s
       timeout: 10s

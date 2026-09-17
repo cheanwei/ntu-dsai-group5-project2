@@ -22,15 +22,18 @@
 #   Service account         attached to the VM; pulls images, reaches GCS/BQ
 #   Firewall: allow         tcp:22,3002 from IAP's range   (priority 800)
 #   Firewall: deny          tcp:22,3002,3389 from anywhere (priority 900)
+#   Firewall: allow         tcp:80 from anywhere — read-only UI (priority 850)
 #   The VM                  e2-micro, external IP, startup-script.sh
 #   Compose file            copied to /opt/dagster/app over the IAP tunnel
 #
-# EGRESS IS PUBLIC, INGRESS IS NOT. The VM has an external IP so it can reach
-# kaggle.com — `kaggle_dataset` downloads 126 MB — but no unsolicited packet
-# from the internet reaches it. Two rules do that, and the second one matters
-# more than it looks:
+# EGRESS IS PUBLIC; INGRESS IS IAP-ONLY EXCEPT THE READ-ONLY UI. The VM has an
+# external IP so it can reach kaggle.com — `kaggle_dataset` downloads 126 MB.
+# The only port the internet reaches is 80, the `--read-only` webserver, which
+# cannot launch runs. SSH and the full UI are closed by two rules, and the
+# second one matters more than it looks:
 #
 #   800  ALLOW  tcp:22,3002  from 35.235.240.0/20  → tag dagster-vm
+#   850  ALLOW  tcp:80       from 0.0.0.0/0        → tag dagster-vm  (read-only UI)
 #   900  DENY   tcp:22,3002,3389  from 0.0.0.0/0   → tag dagster-vm
 #  1000  ALLOW  tcp:22       from 0.0.0.0/0        → EVERY VM  (GCP's default)
 #
@@ -93,6 +96,10 @@ SA_NAME="${SA_NAME:-dagster-vm}"
 UI_PORT="${UI_PORT:-3002}"
 FIREWALL_NAME="${FIREWALL_NAME:-allow-iap-dagster}"
 DENY_FIREWALL_NAME="${DENY_FIREWALL_NAME:-deny-public-dagster}"
+# The read-only webserver in docker-compose.vm.yml, published to the internet
+# for people without GCP access. Must match that service's host port.
+PUBLIC_UI_PORT="${PUBLIC_UI_PORT:-80}"
+PUBLIC_FIREWALL_NAME="${PUBLIC_FIREWALL_NAME:-allow-public-dagster-readonly}"
 # The service account the GitHub Actions deploy job authenticates as — the one
 # behind the GCP_SA_KEY secret. Optional: pass it and the script grants it the
 # five roles the deploy needs. Leave it unset and you grant them by hand.
@@ -174,7 +181,7 @@ gcloud auth list --filter=status:ACTIVE --format='value(account)' | grep -q . \
 
 bold "Provisioning ${VM_NAME}"
 info "project    ${PROJECT_ID}"
-info "zone       ${ZONE} (${MACHINE_TYPE}, public egress, IAP-only ingress)"
+info "zone       ${ZONE} (${MACHINE_TYPE}, public egress, IAP-only ingress + public read-only UI)"
 info "registry   ${AR_HOST}/${PROJECT_ID}/${AR_REPO}"
 info "identity   ${SA_EMAIL}"
 (( DRY_RUN )) && bold "DRY RUN — nothing will be changed"
@@ -276,7 +283,7 @@ else
 fi
 
 # --- 4. Firewall -----------------------------------------------------------
-# Two rules, both scoped to the dagster-vm tag. See the header for why the
+# Three rules, all scoped to the dagster-vm tag. See the header for why the
 # second one is not redundant: GCP's own default-allow-ssh opens port 22 to
 # 0.0.0.0/0 for every instance on the default network, so on a VM with a public
 # address the allow-list is only half the job.
@@ -315,6 +322,25 @@ else
     --source-ranges="0.0.0.0/0" \
     --target-tags="${NETWORK_TAG}" \
     --description="Overrides the default VPC's internet-wide SSH/RDP allow for this VM" \
+    --project "${PROJECT_ID}"
+fi
+
+# The one port that IS public: the --read-only webserver. It is not in the deny
+# rule's port list, so this allow is what opens it; the default VPC has no rule
+# for it. Safe to expose only because that server refuses every mutation —
+# never point this rule at ${UI_PORT}, whose UI can launch runs.
+if exists gcloud compute firewall-rules describe "${PUBLIC_FIREWALL_NAME}" --project "${PROJECT_ID}"; then
+  skip "rule ${PUBLIC_FIREWALL_NAME} exists"
+else
+  run gcloud compute firewall-rules create "${PUBLIC_FIREWALL_NAME}" \
+    --network="${NETWORK}" \
+    --direction=INGRESS \
+    --action=ALLOW \
+    --priority=850 \
+    --rules="tcp:${PUBLIC_UI_PORT}" \
+    --source-ranges="0.0.0.0/0" \
+    --target-tags="${NETWORK_TAG}" \
+    --description="Public read-only Dagster UI (dagster-webserver --read-only)" \
     --project "${PROJECT_ID}"
 fi
 
@@ -503,7 +529,7 @@ image, the .env and the service-account key are the deploy workflow's job.
        gh workflow run deploy-dagster.yml
      or push to main.
 
-  3. Open the UI (ingress is IAP-only — the tunnel is the only way in):
+  3. Open the full UI (IAP-only — the tunnel is the only way in):
        gcloud compute start-iap-tunnel ${VM_NAME} ${UI_PORT} \\
          --local-host-port=127.0.0.1:${UI_PORT} --zone ${ZONE} --project ${PROJECT_ID}
      then http://127.0.0.1:${UI_PORT}
@@ -511,6 +537,12 @@ image, the .env and the service-account key are the deploy workflow's job.
      127.0.0.1, not localhost: on macOS localhost resolves to ::1 first, and
      the tunnel logs a stream of "[Errno 9] Bad file descriptor" on IPv6
      connection teardown. Noise, not failure — but avoidable.
+
+  4. Share the read-only UI with people who have no GCP access:
+       http://$(gcloud compute instances describe "${VM_NAME}" --zone "${ZONE}" --project "${PROJECT_ID}" \
+         --format='value(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || echo '<external-ip>')
+     The address is ephemeral and changes if the VM is stopped; see README.md,
+     "Public read-only UI", to reserve it.
 
   SSH:   gcloud compute ssh ${VM_NAME} --zone ${ZONE} --tunnel-through-iap
   Logs:  gcloud compute ssh ${VM_NAME} --zone ${ZONE} --tunnel-through-iap \\
@@ -523,5 +555,5 @@ image, the .env and the service-account key are the deploy workflow's job.
 
   Teardown:
     gcloud compute instances delete ${VM_NAME} --zone ${ZONE}
-    gcloud compute firewall-rules delete ${FIREWALL_NAME} ${DENY_FIREWALL_NAME}
+    gcloud compute firewall-rules delete ${FIREWALL_NAME} ${DENY_FIREWALL_NAME} ${PUBLIC_FIREWALL_NAME}
 DONE

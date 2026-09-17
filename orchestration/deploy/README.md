@@ -6,6 +6,7 @@ use one project image and two Dagster services:
 | Service | Responsibility |
 |---|---|
 | `webserver` | UI, lineage, run submission, and history |
+| `webserver-readonly` | Hosted only: public `--read-only` UI for people without GCP access |
 | `daemon` | Schedule and sensor evaluation, queued-run execution, and run launching |
 
 Both load `orchestration.definitions` and share a SQLite-backed
@@ -46,7 +47,8 @@ value in `--env-file`, so two shells can show different run histories. Pin an
 absolute path when history location matters:
 
 ```bash
-DAGSTER_HOME=/absolute/path/to/orchestration +  docker compose --env-file ../../.env up -d
+DAGSTER_HOME=/absolute/path/to/orchestration \
+  docker compose --env-file ../../.env up -d
 ```
 
 ### Data, credentials, and volumes
@@ -164,13 +166,14 @@ looks complete but deployment still fails.
 
 ## Networking
 
-The VM has an ephemeral external address for outbound Kaggle traffic but is not
-intended to accept public connections. Both firewall rules target the
-`dagster-vm` network tag:
+The VM has an ephemeral external address for outbound Kaggle traffic. The only
+port it accepts from the public internet is 80, the read-only UI. All three
+firewall rules target the `dagster-vm` network tag:
 
 | Priority | Action | Ports and source |
 |---:|---|---|
 | 800 | allow | TCP 22 and 3002 from IAP `35.235.240.0/20` |
+| 850 | allow | TCP 80 from `0.0.0.0/0` (read-only UI) |
 | 900 | deny | TCP 22, 3002, and 3389 from `0.0.0.0/0` |
 
 The deny rule matters on the default VPC because a lower-priority shared rule
@@ -178,9 +181,54 @@ may allow public SSH. Since lower numeric priorities win, authenticated IAP
 traffic is accepted at 800 and other traffic on those ports is rejected at
 900 before a default priority-1000 rule can match.
 
-The Dagster UI has no application-level authentication. Anyone who reaches it
-can submit a pipeline run that uses project resources, so the IAP boundary and
-public deny rule are required controls.
+The Dagster UI has no application-level authentication. Anyone who reaches the
+full UI on 3002 can submit a pipeline run that uses project resources, so the
+IAP boundary and public deny rule are required controls. Never widen the
+850 rule to port 3002.
+
+### Public read-only UI
+
+People without GCP access use `webserver-readonly`: the same image, code
+location and run history, started with `dagster-webserver --read-only`. They
+can browse the asset graph, asset details, runs, and run logs. Dagster rejects
+every mutation server-side: launching or re-executing runs, materializing
+assets, and turning schedules or sensors on or off.
+
+Share `http://<external-ip>`. Find the address with:
+
+```bash
+gcloud compute instances describe dagster-vm --zone=us-central1-a \
+  --format='value(networkInterfaces[0].accessConfigs[0].natIP)'
+```
+
+Keep in mind:
+
+- **Everything shown is public.** That includes run logs, asset metadata, dbt
+  SQL, and the bucket and dataset names that appear in them. Secrets are not
+  shown: the key file and `.env` values are not rendered by the UI.
+- **Plain HTTP.** Browsers mark the page "Not secure". Nothing sensitive is
+  submitted, because the page takes no input that changes state. For HTTPS, put
+  a reverse proxy such as Caddy with a domain in front.
+- **The address changes when the VM stops.** To keep a stable link, promote the
+  current ephemeral address to a static one. A static address costs the same
+  while the VM runs, but is billed while the VM is stopped too:
+
+  ```bash
+  IP=$(gcloud compute instances describe dagster-vm --zone=us-central1-a \
+    --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+  gcloud compute addresses create dagster-ui --region=us-central1 --addresses="$IP"
+  ```
+
+- **Memory.** The second webserver loads the code location too, adding a few
+  hundred MB. Use `e2-small` or larger.
+- **Turn it off** without touching the operator UI:
+
+  ```bash
+  gcloud compute firewall-rules delete allow-public-dagster-readonly
+  ```
+
+  To also free its memory, remove the service from `docker-compose.vm.yml` and
+  redeploy; `--remove-orphans` stops the container.
 
 ### Cost boundary
 
@@ -285,7 +333,8 @@ Remove the host and firewall rules:
 
 ```bash
 gcloud compute instances delete dagster-vm --zone=us-central1-a
-gcloud compute firewall-rules delete allow-iap-dagster deny-public-dagster
+gcloud compute firewall-rules delete allow-iap-dagster deny-public-dagster \
+  allow-public-dagster-readonly
 ```
 
 Deleting the VM removes its local Dagster history. Artifact Registry images and
@@ -296,7 +345,9 @@ other shared project resources are separate and must be reviewed independently.
 Start an IAP tunnel:
 
 ```bash
-gcloud compute start-iap-tunnel dagster-vm 3002 +  --local-host-port=127.0.0.1:3002 +  --zone=us-central1-a
+gcloud compute start-iap-tunnel dagster-vm 3002 \
+  --local-host-port=127.0.0.1:3002 \
+  --zone=us-central1-a
 ```
 
 Open <http://127.0.0.1:3002> and keep the tunnel process running. Explicit IPv4
@@ -312,13 +363,19 @@ port 3002 on the VM. The tunnel can remain open; wait, then reload.
 When the error persists, inspect the listener and containers:
 
 ```bash
-gcloud compute ssh dagster-vm +  --zone=us-central1-a +  --tunnel-through-iap +  --command='sudo ss -lntp | grep 3002; sudo docker ps -a'
+gcloud compute ssh dagster-vm \
+  --zone=us-central1-a \
+  --tunnel-through-iap \
+  --command='sudo ss -lntp | grep 3002; sudo docker ps -a'
 ```
 
 Then inspect startup and daemon logs:
 
 ```bash
-gcloud compute ssh dagster-vm +  --zone=us-central1-a +  --tunnel-through-iap +  --command='cd /opt/dagster/app && sudo docker compose logs --tail=100 webserver daemon'
+gcloud compute ssh dagster-vm \
+  --zone=us-central1-a \
+  --tunnel-through-iap \
+  --command='cd /opt/dagster/app && sudo docker compose logs --tail=100 webserver daemon'
 ```
 
 A repeatedly restarting container with little application output can indicate
@@ -331,7 +388,10 @@ The webserver submits runs; the daemon executes them. Confirm that the daemon is
 running and inspect its logs:
 
 ```bash
-gcloud compute ssh dagster-vm +  --zone=us-central1-a +  --tunnel-through-iap +  --command='cd /opt/dagster/app && sudo docker compose ps && sudo docker compose logs --tail=100 daemon'
+gcloud compute ssh dagster-vm \
+  --zone=us-central1-a \
+  --tunnel-through-iap \
+  --command='cd /opt/dagster/app && sudo docker compose ps && sudo docker compose logs --tail=100 daemon'
 ```
 
 Stopping the daemon also stops schedule and automation-condition evaluation, so

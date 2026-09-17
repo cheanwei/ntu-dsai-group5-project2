@@ -347,17 +347,21 @@ jobs:
       - name: Wait for the webserver
         run: |
           # The e2-micro needs a minute or two to import dbt, dlt and pandas in
-          # both containers. Polled from inside the VM: the UI port is only
+          # both containers. Polled from inside the VM: the full UI port is only
           # reachable through an IAP tunnel, and standing one up to curl once
           # is more moving parts than this is worth.
+          #
+          # Both webservers: the IAP-only full UI on 3002 and the public
+          # --read-only UI on 80.
           gcloud compute ssh "${VM_NAME}" --zone "${ZONE}" --tunnel-through-iap --quiet --command '
             for i in $(seq 1 30); do
-              if curl -fsS -o /dev/null http://localhost:3002/server_info; then
-                echo "webserver healthy after $(( i * 10 ))s"; exit 0
+              if curl -fsS -o /dev/null http://localhost:3002/server_info \
+                && curl -fsS -o /dev/null http://localhost:80/server_info; then
+                echo "webservers healthy after $(( i * 10 ))s"; exit 0
               fi
               sleep 10
             done
-            echo "::error::webserver did not become healthy in 300s"
+            echo "::error::webservers did not become healthy in 300s"
             cd /opt/dagster/app && sudo docker compose ps && sudo docker compose logs --tail=80
             exit 1
           '
@@ -365,6 +369,8 @@ jobs:
       - name: Summary
         if: always()
         run: |
+          PUBLIC_IP="$(gcloud compute instances describe "${VM_NAME}" --zone "${ZONE}" \
+            --format='value(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || true)"
           {
             echo "### dagster-vm"
             echo
@@ -374,8 +380,9 @@ jobs:
             echo "| instance | \`${VM_NAME}\` (\`${ZONE}\`) |"
             echo "| result | ${{ job.status }} |"
             echo
-            echo "Ingress is IAP-only. The VM has a public IP, but it carries egress"
-            echo "to Kaggle, not a reachable UI. Tunnel in:"
+            echo "Read-only UI, for anyone (no GCP access needed): <http://${PUBLIC_IP:-<external-ip>}>"
+            echo
+            echo "The full UI, which can launch runs, is IAP-only. Tunnel in:"
             echo
             echo '```'
             echo "gcloud compute start-iap-tunnel ${VM_NAME} 3002 \\"
