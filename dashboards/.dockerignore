@@ -1,0 +1,13 @@
+# Credentials: mirrors the repo-root .dockerignore. A key baked into a layer
+# survives every later RUN that deletes it.
+*.json
+.env
+.env.*
+*.pem
+.streamlit/secrets.toml
+
+__pycache__/
+*.py[cod]
+powerbi/
+README.md
+.DS_Store

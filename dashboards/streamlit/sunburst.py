@@ -34,7 +34,7 @@ QUERY = text(
 )
 
 
-@st.cache_data
+@st.cache_data(ttl="1h")
 def load_sales_data() -> pd.DataFrame:
     with engine.connect() as connection:
         return pd.read_sql(QUERY, connection)

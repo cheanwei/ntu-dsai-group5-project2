@@ -1,0 +1,3 @@
+# What `gcloud run deploy --source dashboards` uploads to Cloud Build.
+.gcloudignore
+#!include:.dockerignore

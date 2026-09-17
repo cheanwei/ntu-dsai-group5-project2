@@ -14,7 +14,21 @@ st.title(
 st.markdown(
     "Which cities generate the most revenue?")
 
-cities = pd.DataFrame(requests.get(f"{BASE}/api/cities").json().get("cities", []))
+
+# Cached so reruns and visitors on the public deployment don't each trigger a
+# BigQuery query through the API.
+@st.cache_data(ttl="1h")
+def load_cities() -> pd.DataFrame:
+    response = requests.get(f"{BASE}/api/cities", timeout=60)
+    response.raise_for_status()
+    return pd.DataFrame(response.json().get("cities", []))
+
+
+try:
+    cities = load_cities()
+except Exception as exc:
+    st.error(f"Failed to load cities from the API: {exc}")
+    st.stop()
 if cities.empty:
     st.warning("No data loaded.")
     st.stop()
