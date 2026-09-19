@@ -7,8 +7,9 @@ Executive Overview
 
 <img width="768" height="426" alt="image" src="https://github.com/user-attachments/assets/660339cc-5216-480f-b1f0-72753abb4e2d" />
 
+Regional Sales Analysis
 
-
+<img width="683" height="401" alt="image" src="https://github.com/user-attachments/assets/a51e8c96-53a3-46ef-a180-af41fcf50ba8" />
 
 
 ## Prerequisites
