@@ -3,6 +3,14 @@
 Two dashboards sit over the dbt marts in BigQuery: a Streamlit app in this
 folder, and a Power BI report authored outside the repo.
 
+Executive Overview
+
+<img width="768" height="426" alt="image" src="https://github.com/user-attachments/assets/660339cc-5216-480f-b1f0-72753abb4e2d" />
+
+
+
+
+
 ## Prerequisites
 
 - Dependencies installed from the repo root: `uv sync` (Flask, SQLAlchemy,
